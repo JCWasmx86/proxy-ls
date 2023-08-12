@@ -1,0 +1,17 @@
+github.com/gorilla/websocket v1.4.1/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
+github.com/sourcegraph/go-lsp v0.0.0-20200429204803-219e11d77f5d h1:afLbh+ltiygTOB37ymZVwKlJwWZn+86syPTbrrOAydY=
+github.com/sourcegraph/go-lsp v0.0.0-20200429204803-219e11d77f5d/go.mod h1:SULmZY7YNBsvNiQbrb/BEDdEJ84TGnfyUQxaHt8t8rY=
+github.com/sourcegraph/jsonrpc2 v0.2.0 h1:KjN/dC4fP6aN9030MZCJs9WQbTOjWHhrtKVpzzSrr/U=
+github.com/sourcegraph/jsonrpc2 v0.2.0/go.mod h1:ZafdZgk/axhT1cvZAPOhw+95nz2I/Ra5qMlU4gTRwIo=
+github.com/withmandala/go-log v0.1.0 h1:wINmTEe7BQ6zEA8sE7lSsYeaxCLluK6RFjF/IB5tzkA=
+github.com/withmandala/go-log v0.1.0/go.mod h1:/V9xQUTW74VjYm3u2Liv/bIUGLWoL9z2GlHwtscp4vg=
+golang.org/x/crypto v0.12.0 h1:tFM/ta59kqch6LlvYnPa0yx5a83cL2nHflFhYKvv9Yk=
+golang.org/x/crypto v0.12.0/go.mod h1:NF0Gs7EO5K4qLn+Ylc+fih8BSTeIjAP05siRnAh98yw=
+golang.org/x/sys v0.11.0 h1:eG7RXZHdqOJ1i+0lgLgCpSXAp6M3LYlAo6osgSi0xOM=
+golang.org/x/sys v0.11.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+golang.org/x/term v0.11.0 h1:F9tnn/DA/Im8nCwm+fX+1/eBwi4qFjRT++MhtVC4ZX0=
+golang.org/x/term v0.11.0/go.mod h1:zC9APTIj3jG3FdV/Ons+XE1riIZXG4aZ4GTHiPZJPIU=
+golang.org/x/tools v0.11.2-0.20230801165449-23c7f589706c h1:YilyjKn3EDn6X+x+kP+4REeEtG3WeM52dJAr7AWzVrQ=
+golang.org/x/tools v0.11.2-0.20230801165449-23c7f589706c/go.mod h1:anzJrxPjNtfgiYQYirP2CPGzGLxrH2u2QBhn6Bf3qY8=
+golang.org/x/tools/gopls v0.13.1 h1:Q0cfPbEG1WVfgxcRZ9uKTA6/ckIRNXx6Ym7KgT/VFE4=
+golang.org/x/tools/gopls v0.13.1/go.mod h1:8FayyP3W2NG1v7ubgCcuuTRzlG21r+yuEgKXnoyPgJo=

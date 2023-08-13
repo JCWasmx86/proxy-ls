@@ -223,22 +223,24 @@ func NewServer(jsonrpc *JSONRPC) *Server {
 		jsonrpcs:         make(map[string]*JSONRPC, LanguageServerCount),
 		initialized:      make(map[string]bool, LanguageServerCount),
 	}
-	go server.setupLS(server.yamlLS, "yaml")
-	go server.setupLS(server.jsonLS, "json")
-	go server.setupLS(server.xmlLS, "xml")
+	server.jsonrpcs["yaml"] = makeJSONRPC(server.yamlLS)
+	server.jsonrpcs["json"] = makeJSONRPC(server.jsonLS)
+	server.jsonrpcs["xml"] = makeJSONRPC(server.xmlLS)
+	go server.runLS(server.jsonrpcs["yaml"], "yaml")
+	go server.runLS(server.jsonrpcs["json"], "json")
+	go server.runLS(server.jsonrpcs["xml"], "xml")
 
 	return server
 }
 
-func (s *Server) setupLS(p *ProcessIO, id string) {
-	jsonrpc := &JSONRPC{
+func makeJSONRPC(p *ProcessIO) *JSONRPC {
+	return &JSONRPC{
 		in:  p.stdout,
 		out: p.stdin,
 	}
-	s.mu.Lock()
-	s.jsonrpcs[id] = jsonrpc
-	s.mu.Unlock()
+}
 
+func (s *Server) runLS(jsonrpc *JSONRPC, id string) {
 	for {
 		messageData, err := jsonrpc.ReadMessage()
 		if err != nil {

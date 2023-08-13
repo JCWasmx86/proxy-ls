@@ -3,11 +3,11 @@ This is a language server that acts as a proxy between GNOME Builder and other l
 yaml-language-server.
 
 ## Features
-- [ ] Flatpak manifest support (JSON)
+- [x] Flatpak manifest support (JSON)
 - [ ] Flatpak manifest support (YAML)
 - [ ] Support https://www.schemastore.org/json/
-- [ ] GSchema XML
+- [ ] GSchema XML (https://gitlab.gnome.org/GNOME/glib/-/raw/HEAD/gio/gschema.dtd)
 - [ ] GResource XML
-- [ ] DOAP
-- [ ] D-Bus
+- [ ] DOAP (https://raw.githubusercontent.com/ewilderj/doap/master/schema/doap.rdf)
+- [ ] D-Bus (http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd)
 

@@ -242,17 +242,26 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 		if method != "workspace/configuration" {
 			return
 		}
-		requested := request["params"].(map[string]interface{})["items"].([]map[string]interface{})
+		requested := request["params"].(map[string]interface{})["items"].([]interface{})
 		var returned []interface{}
 		for _, item := range requested {
-			section := item["section"].(string)
+			section := item.(map[string]interface{})["section"].(string)
 			switch section {
 			case "xml.format.insertSpaces":
 				returned = append(returned, true)
 			case "xml.format.tabSize":
 				returned = append(returned, 2)
+			default:
+				returned = append(returned, nil)
 			}
 		}
+		call := map[string]interface{}{
+			"jsonrpc": "2.0",
+			"id":      request["id"],
+			"result":  returned,
+		}
+		data, _ := json.Marshal(call)
+		s.jsonrpcs[id-1].SendMessage(data)
 		return
 	}
 	seqId := ExtractIntValue(request["id"])

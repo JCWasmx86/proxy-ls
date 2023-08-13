@@ -11,6 +11,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/hashicorp/go-set"
 	"github.com/sourcegraph/go-lsp"
 	"github.com/withmandala/go-log"
 )
@@ -98,12 +99,10 @@ func (rpc *JSONRPC) ReadMessage() ([]byte, error) {
 					number_as_str := strings.TrimSpace(strings.Split(header, ":")[1])
 					contentLength, _ = strconv.Atoi(number_as_str)
 				}
-				fmt.Fprintf(os.Stderr, "Header = %s\n", header)
 				header = ""
 			}
 		} else {
 			header += string(tmpData)
-			fmt.Fprintf(os.Stderr, ">> Header = %s\n", header)
 			state = 5
 		}
 	}
@@ -112,13 +111,16 @@ func (rpc *JSONRPC) ReadMessage() ([]byte, error) {
 	messageData := make([]byte, contentLength)
 	_, err := rpc.in.Read(messageData)
 	if err != nil {
-		return nil, fmt.Errorf("error reading message data: %s", err)
+		return nil, fmt.Errorf("ReadMessage(): error reading message data: %s", err)
 	}
 
 	return messageData, nil
 }
 
 func (rpc *JSONRPC) SendMessage(message []byte) error {
+	if string(message) == "null" {
+		panic(message)
+	}
 	contentLength := len(message)
 	headers := fmt.Sprintf("Content-Length: %d\r\n\r\n", contentLength)
 
@@ -146,6 +148,7 @@ type Server struct {
 	jsonrpcs             [3]*JSONRPC
 	initialized          [3]bool
 	diagnostics          map[lsp.DocumentURI]([]lsp.Diagnostic)
+	pendingRequests      *set.Set[int]
 }
 
 func (s *Server) AddProcess(command string) (*ProcessIO, error) {
@@ -171,9 +174,10 @@ func (s *Server) AddProcess(command string) (*ProcessIO, error) {
 
 func NewServer(jsonrpc *JSONRPC) *Server {
 	server := &Server{
-		logger:      log.New(os.Stderr),
-		jsonrpc:     jsonrpc,
-		diagnostics: make(map[lsp.DocumentURI]([]lsp.Diagnostic)),
+		logger:          log.New(os.Stderr),
+		jsonrpc:         jsonrpc,
+		diagnostics:     make(map[lsp.DocumentURI]([]lsp.Diagnostic)),
+		pendingRequests: set.New[int](5),
 	}
 	json_ls, err := server.AddProcess("vscode-json-languageserver --stdio")
 	if err != nil {
@@ -226,8 +230,33 @@ func (s *Server) setupLS(p *ProcessIO, id int) {
 }
 
 func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, id int) {
-	s.logger.Infof("Response: (%d) %v", id, request)
-	if ExtractIntValue(request["id"], 1) {
+	s.logger.Infof("Response: (%d) %d %v", id, ExtractIntValue(request["id"]), request)
+	if _, ok := request["error"]; ok {
+		s.logger.Warnf("Received error from %d: %v", id, request["error"])
+	}
+	if _, ok := request["params"]; ok {
+		if id != 3 {
+			return
+		}
+		method := request["method"].(string)
+		if method != "workspace/configuration" {
+			return
+		}
+		requested := request["params"].(map[string]interface{})["items"].([]map[string]interface{})
+		var returned []interface{}
+		for _, item := range requested {
+			section := item["section"].(string)
+			switch section {
+			case "xml.format.insertSpaces":
+				returned = append(returned, true)
+			case "xml.format.tabSize":
+				returned = append(returned, 2)
+			}
+		}
+		return
+	}
+	seqId := ExtractIntValue(request["id"])
+	if seqId == 1 {
 		call := map[string]interface{}{
 			"jsonrpc": "2.0",
 			"method":  "initialized",
@@ -238,6 +267,18 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 		s.initialized[id-1] = true
 		return // Initialization succeeded
 	}
+	if s.pendingRequests.Contains(seqId) {
+		realSeqId := seqId - (id * 1000000)
+		request["id"] = realSeqId
+		data, _ := json.Marshal(request)
+		s.jsonrpc.SendMessage(data)
+		s.mu.Lock()
+		s.pendingRequests.Remove(seqId)
+		s.mu.Unlock()
+		return
+	}
+	data, _ := json.Marshal(request)
+	s.jsonrpc.SendMessage(data)
 }
 
 func (s *Server) publishDiagnostics() {
@@ -266,7 +307,7 @@ func (s *Server) publishDiagnostics() {
 }
 
 func (s *Server) handleLSNotification(request map[string]interface{}, rpc *JSONRPC, id int) {
-	s.logger.Infof("LS-Notification: (%d) %v", id, request)
+	s.logger.Infof("LS-Notification: (%d) %v", id, request["method"])
 	method := request["method"].(string)
 	marshalled_params, _ := json.Marshal(request["params"])
 	switch method {
@@ -278,16 +319,17 @@ func (s *Server) handleLSNotification(request map[string]interface{}, rpc *JSONR
 	}
 }
 
-func ExtractIntValue(idValue interface{}, n int) bool {
+func ExtractIntValue(idValue interface{}) int {
 	switch id := idValue.(type) {
 	case float64:
-		return id == float64(n)
+		return int(id)
 	case string:
-		return id == fmt.Sprint(n)
+		r, _ := strconv.Atoi(id)
+		return r
 	case int:
-		return id == n
+		return id
 	default:
-		return false
+		panic(id)
 	}
 }
 func (s *Server) InitializeAll(rootURI lsp.DocumentURI, clientCaps lsp.ClientCapabilities) {
@@ -311,6 +353,17 @@ func (s *Server) InitializeAll(rootURI lsp.DocumentURI, clientCaps lsp.ClientCap
 			return
 		}
 	}
+}
+
+func (s *Server) redirectRequest(id int, request map[string]interface{}) {
+	newSeq := ExtractIntValue(request["id"]) + (id * 1000000)
+	s.logger.Infof("Redirecting %v to %d as new ID %v", request["method"], id, newSeq)
+	request["id"] = newSeq
+	data, _ := json.Marshal(request)
+	s.mu.Lock()
+	s.pendingRequests.Insert(newSeq)
+	s.mu.Unlock()
+	s.jsonrpcs[id-1].SendMessage(data)
 }
 
 func (s *Server) handleCall(request map[string]interface{}) {
@@ -353,6 +406,27 @@ func (s *Server) handleCall(request map[string]interface{}) {
 				},
 			},
 		}
+	case "textDocument/documentSymbol":
+		var params lsp.DocumentSymbolParams
+		json.Unmarshal(marshalled_params, &params)
+		n := s.selectLSForFile(string(params.TextDocument.URI), "")
+		if n != 0 {
+			s.redirectRequest(n, request)
+		}
+	case "textDocument/formatting":
+		var params lsp.DocumentFormattingParams
+		json.Unmarshal(marshalled_params, &params)
+		n := s.selectLSForFile(string(params.TextDocument.URI), "")
+		if n != 0 {
+			s.redirectRequest(n, request)
+		}
+	case "textDocument/codeAction":
+		var params lsp.CodeActionParams
+		json.Unmarshal(marshalled_params, &params)
+		n := s.selectLSForFile(string(params.TextDocument.URI), "")
+		if n != 0 {
+			s.redirectRequest(n, request)
+		}
 	default:
 		response = map[string]interface{}{
 			"jsonrpc": "2.0",
@@ -362,6 +436,10 @@ func (s *Server) handleCall(request map[string]interface{}) {
 				"message": "Method not found",
 			},
 		}
+	}
+
+	if response == nil {
+		return
 	}
 
 	responseData, err := json.Marshal(response)
@@ -422,7 +500,6 @@ func (s *Server) handleNotification(request map[string]interface{}) {
 	case "textDocument/didOpen":
 		var initParams lsp.DidOpenTextDocumentParams
 		json.Unmarshal(marshalled_params, &initParams)
-		s.logger.Infof("didOpen: %v", initParams)
 		n := s.selectLSForFile(string(initParams.TextDocument.URI), initParams.TextDocument.Text)
 		if n != 0 {
 			s.redirectNotification(n, request, initParams.TextDocument.URI)
@@ -455,7 +532,7 @@ func (s *Server) Serve() {
 	for {
 		messageData, err := s.jsonrpc.ReadMessage()
 		if err != nil {
-			s.logger.Infof("Error reading message: %s\n", err)
+			s.logger.Infof("(server<->editor): Error reading message: %s\n", err)
 			return
 		}
 
@@ -463,6 +540,11 @@ func (s *Server) Serve() {
 		if err := json.Unmarshal(messageData, &request); err != nil {
 			s.logger.Infof("Error decoding request: %s\n", err)
 			return
+		}
+
+		if _, ok := request["error"]; ok {
+			s.logger.Warnf("Received error from editor: %v", request["error"])
+			continue
 		}
 
 		if _, ok := request["id"]; ok {

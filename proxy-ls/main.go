@@ -16,6 +16,29 @@ import (
 	"github.com/withmandala/go-log"
 )
 
+const (
+	LanguageServerFactor = 1000000
+	PendingRequestsSize  = 5
+	FlatpakManifestSize  = 2
+	LanguageServerCount  = 3
+	DefaultTabSize       = 2
+	YamlID               = 1
+	JSONID               = 2
+	XMLID                = 3
+)
+
+func checkerror(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func checkok(ok bool) {
+	if !ok {
+		panic("")
+	}
+}
+
 type ProcessIO struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
@@ -62,12 +85,13 @@ func (p *SyscallWriteCloser) Close() error {
 }
 
 func NewJSONRPC() *JSONRPC {
-	real_sout, _ := syscall.Dup(1 /*STDOUT_FILENO*/)
-	syscall.Dup2(2 /*STDERR_FILENO*/, 1 /*STDOUT_FILENO*/)
+	realSout, _ := syscall.Dup(syscall.Stdout)
+	checkerror(syscall.Dup2(syscall.Stderr, syscall.Stdout))
+
 	return &JSONRPC{
 		in: os.Stdin,
 		out: &SyscallWriteCloser{
-			fd: real_sout,
+			fd: realSout,
 		},
 	}
 }
@@ -75,33 +99,43 @@ func NewJSONRPC() *JSONRPC {
 func (rpc *JSONRPC) ReadMessage() ([]byte, error) {
 	var contentLength int
 	var state int
+
 	// Read headers
 	tmpData := make([]byte, 1)
 	header := ""
+	breakFromLoop := false
+
 	for {
+		if breakFromLoop {
+			break
+		}
 		_, err := rpc.in.Read(tmpData)
 		if err != nil {
 			return nil, err
 		}
-		if tmpData[0] == '\r' {
+
+		switch tmpData[0] {
+		case '\r':
 			if state == 2 {
 				state = 3
 			} else {
 				state = 1
 			}
-		} else if tmpData[0] == '\n' {
+		case '\n':
 			if state == 3 {
-				state = 4
+				breakFromLoop = true
 				break
-			} else {
-				state = 2
-				if strings.HasPrefix(header, "Content-Length:") {
-					number_as_str := strings.TrimSpace(strings.Split(header, ":")[1])
-					contentLength, _ = strconv.Atoi(number_as_str)
-				}
-				header = ""
 			}
-		} else {
+
+			state = 2
+
+			if strings.HasPrefix(header, "Content-Length:") {
+				numberAsStr := strings.TrimSpace(strings.Split(header, ":")[1])
+				contentLength, _ = strconv.Atoi(numberAsStr)
+			}
+
+			header = ""
+		default:
 			header += string(tmpData)
 			state = 5
 		}
@@ -109,9 +143,10 @@ func (rpc *JSONRPC) ReadMessage() ([]byte, error) {
 
 	// Read JSON-RPC message
 	messageData := make([]byte, contentLength)
+
 	_, err := rpc.in.Read(messageData)
 	if err != nil {
-		return nil, fmt.Errorf("ReadMessage(): error reading message data: %s", err)
+		return nil, fmt.Errorf("ReadMessage(): error reading message data: %w", err)
 	}
 
 	return messageData, nil
@@ -121,38 +156,39 @@ func (rpc *JSONRPC) SendMessage(message []byte) error {
 	if string(message) == "null" {
 		panic(message)
 	}
+
 	contentLength := len(message)
 	headers := fmt.Sprintf("Content-Length: %d\r\n\r\n", contentLength)
 
 	// Write headers and JSON-RPC message
 	_, err := rpc.out.Write([]byte(headers))
 	if err != nil {
-		return fmt.Errorf("error writing headers: %s", err)
+		return fmt.Errorf("error writing headers: %w", err)
 	}
 
 	_, err = rpc.out.Write(message)
 	if err != nil {
-		return fmt.Errorf("error writing message: %s", err)
+		return fmt.Errorf("error writing message: %w", err)
 	}
 
 	return nil
 }
 
 type Server struct {
-	logger               *log.Logger
-	jsonrpc              *JSONRPC
-	mu                   sync.Mutex
-	json_language_server *ProcessIO
-	xml_language_server  *ProcessIO
-	yaml_language_server *ProcessIO
-	jsonrpcs             [3]*JSONRPC
-	initialized          [3]bool
-	diagnostics          map[protocol.URI]([]protocol.Diagnostic)
-	pendingRequests      *set.Set[int]
-	flatpakManifests     *set.Set[string]
+	logger           *log.Logger
+	jsonrpc          *JSONRPC
+	mu               sync.RWMutex
+	jsonLS           *ProcessIO
+	xmlLS            *ProcessIO
+	yamlLS           *ProcessIO
+	jsonrpcs         map[string]*JSONRPC
+	initialized      map[string]bool
+	diagnostics      map[protocol.URI]([]protocol.Diagnostic)
+	pendingRequests  *set.Set[int]
+	flatpakManifests *set.Set[string]
 }
 
-func (s *Server) AddProcess(command string) (*ProcessIO, error) {
+func AddProcess(command string) *ProcessIO {
 	cmd := exec.Command("bash", "-c", command)
 	cmd.Stderr = os.Stderr
 	stdin, _ := cmd.StdinPipe()
@@ -166,11 +202,11 @@ func (s *Server) AddProcess(command string) (*ProcessIO, error) {
 
 	go func(p *ProcessIO) {
 		defer p.Close()
-		cmd.Start()
-		cmd.Wait()
+		checkerror(cmd.Start())
+		checkerror(cmd.Wait())
 	}(processIO)
 
-	return processIO, nil
+	return processIO
 }
 
 func NewServer(jsonrpc *JSONRPC) *Server {
@@ -178,48 +214,43 @@ func NewServer(jsonrpc *JSONRPC) *Server {
 		logger:           log.New(os.Stderr),
 		jsonrpc:          jsonrpc,
 		diagnostics:      make(map[protocol.URI]([]protocol.Diagnostic)),
-		pendingRequests:  set.New[int](5),
-		flatpakManifests: set.New[string](2),
+		pendingRequests:  set.New[int](PendingRequestsSize),
+		flatpakManifests: set.New[string](FlatpakManifestSize),
+		jsonLS:           AddProcess("vscode-json-languageserver --stdio"),
+		xmlLS:            AddProcess("lemminx"),
+		yamlLS:           AddProcess("yaml-language-server --stdio"),
+		mu:               sync.RWMutex{},
+		jsonrpcs:         make(map[string]*JSONRPC, LanguageServerCount),
+		initialized:      make(map[string]bool, LanguageServerCount),
 	}
-	json_ls, err := server.AddProcess("vscode-json-languageserver --stdio")
-	if err != nil {
-		_ = fmt.Errorf("failed to start vscode-json-languageserver: %v", err)
-	}
-	server.json_language_server = json_ls
-	xml_ls, err := server.AddProcess("lemminx")
-	if err != nil {
-		_ = fmt.Errorf("failed to start lemminx: %v", err)
-	}
-	server.xml_language_server = xml_ls
-	yaml_ls, err := server.AddProcess("yaml-language-server --stdio")
-	if err != nil {
-		_ = fmt.Errorf("failed to start yaml-language-server: %v", err)
-	}
-	server.yaml_language_server = yaml_ls
-
-	go server.setupLS(server.yaml_language_server, 1)
-	go server.setupLS(server.json_language_server, 2)
-	go server.setupLS(server.xml_language_server, 3)
+	go server.setupLS(server.yamlLS, "yaml")
+	go server.setupLS(server.jsonLS, "json")
+	go server.setupLS(server.xmlLS, "xml")
 
 	return server
 }
 
-func (s *Server) setupLS(p *ProcessIO, id int) {
+func (s *Server) setupLS(p *ProcessIO, id string) {
 	jsonrpc := &JSONRPC{
 		in:  p.stdout,
 		out: p.stdin,
 	}
-	s.jsonrpcs[id-1] = jsonrpc
+	s.mu.Lock()
+	s.jsonrpcs[id] = jsonrpc
+	s.mu.Unlock()
+
 	for {
 		messageData, err := jsonrpc.ReadMessage()
 		if err != nil {
-			s.logger.Infof("(%d) Error reading message: %s\n", id, err)
+			s.logger.Infof("(%v) Error reading message: %s\n", id, err)
+
 			return
 		}
 
 		var request map[string]interface{}
 		if err := json.Unmarshal(messageData, &request); err != nil {
-			s.logger.Infof("(%d) Error decoding request: %s\n", id, err)
+			s.logger.Infof("(%v) Error decoding request: %s\n", id, err)
+
 			return
 		}
 
@@ -231,17 +262,36 @@ func (s *Server) setupLS(p *ProcessIO, id int) {
 	}
 }
 
-func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, id int) {
-	s.logger.Infof("Response: (%d) %d", id, ExtractIntValue(request["id"]))
-	if _, ok := request["error"]; ok {
-		s.logger.Warnf("Received error from %d: %v", id, request["error"])
+func str2int(id string) int {
+	switch id {
+	case "yaml":
+		return YamlID
+	case "json":
+		return JSONID
+	case "xml":
+		return XMLID
 	}
+
+	panic(id)
+}
+
+func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, id string) {
+	s.logger.Infof("Response: (%v) %d", id, ExtractIntValue(request["id"]))
+
+	if _, ok := request["error"]; ok {
+		s.logger.Warnf("Received error from %v: %v", id, request["error"])
+	}
+
 	if _, ok := request["params"]; ok {
 		stringified, _ := json.Marshal(request["params"])
-		if id != 3 {
+
+		if id != "xml" {
 			return
 		}
-		method := request["method"].(string)
+
+		method, ok := request["method"].(string)
+		checkok(ok)
+
 		if method == "client/registerCapability" {
 			call := map[string]interface{}{
 				"jsonrpc": "2.0",
@@ -249,113 +299,139 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 				"result":  nil,
 			}
 			data, _ := json.Marshal(call)
-			s.jsonrpcs[id-1].SendMessage(data)
+			checkerror(s.jsonrpcs[id].SendMessage(data))
+
 			return
 		}
+
 		if method != "workspace/configuration" {
 			s.logger.Warnf("Unable to handle %s with params %s", method, stringified)
+
 			return
 		}
+
 		s.logger.Infof("Querying config...: %s", stringified)
-		requested := request["params"].(map[string]interface{})["items"].([]interface{})
+
+		requested, ok := request["params"].(map[string]interface{})["items"].([]interface{})
+		checkok(ok)
+
 		var returned []interface{}
+
 		for _, item := range requested {
-			section := item.(map[string]interface{})["section"].(string)
+			section, ok := item.(map[string]interface{})["section"].(string)
+			checkok(ok)
+
 			switch section {
 			case "xml.format.insertSpaces":
 				returned = append(returned, true)
 			case "xml.format.tabSize":
-				returned = append(returned, 2)
+				returned = append(returned, DefaultTabSize)
 			default:
 				returned = append(returned, nil)
 			}
 		}
+
 		call := map[string]interface{}{
 			"jsonrpc": "2.0",
 			"id":      request["id"],
 			"result":  returned,
 		}
 		data, _ := json.Marshal(call)
-		s.jsonrpcs[id-1].SendMessage(data)
+		checkerror(s.jsonrpcs[id].SendMessage(data))
+
 		return
 	}
-	seqId := ExtractIntValue(request["id"])
-	if seqId == 1 {
+
+	seqID := ExtractIntValue(request["id"])
+	if seqID == 1 {
 		call := map[string]interface{}{
 			"jsonrpc": "2.0",
 			"method":  "initialized",
 			"params":  map[string]interface{}{},
 		}
 		data, _ := json.Marshal(call)
-		s.jsonrpcs[id-1].SendMessage(data)
-		s.initialized[id-1] = true
+		checkerror(s.jsonrpcs[id].SendMessage(data))
+		s.mu.Lock()
+		s.initialized[id] = true
+		s.mu.Unlock()
+
 		return // Initialization succeeded
 	}
-	if s.pendingRequests.Contains(seqId) {
-		realSeqId := seqId - (id * 1000000)
-		request["id"] = realSeqId
+
+	if s.pendingRequests.Contains(seqID) {
+		realSeqID := seqID - (str2int(id) * LanguageServerFactor)
+		request["id"] = realSeqID
 		data, _ := json.Marshal(request)
-		s.jsonrpc.SendMessage(data)
+		checkerror(s.jsonrpc.SendMessage(data))
 		s.mu.Lock()
-		s.pendingRequests.Remove(seqId)
+		s.pendingRequests.Remove(seqID)
 		s.mu.Unlock()
+
 		return
 	}
+
 	data, _ := json.Marshal(request)
-	s.jsonrpc.SendMessage(data)
+	checkerror(s.jsonrpc.SendMessage(data))
 }
 
 func (s *Server) publishDiagnostics() {
-	for k, v := range s.diagnostics {
+	for uri, diagnostics := range s.diagnostics {
 		call := map[string]interface{}{
 			"jsonrpc": "2.0",
 			"method":  "textDocument/publishDiagnostics",
 			"params": protocol.PublishDiagnosticsParams{
-				URI:         k,
+				URI:         uri,
 				Diagnostics: []protocol.Diagnostic{},
 			},
 		}
 		data, _ := json.Marshal(call)
-		s.jsonrpc.SendMessage(data)
+		checkerror(s.jsonrpc.SendMessage(data))
+
 		call = map[string]interface{}{
 			"jsonrpc": "2.0",
 			"method":  "textDocument/publishDiagnostics",
 			"params": protocol.PublishDiagnosticsParams{
-				URI:         k,
-				Diagnostics: v,
+				URI:         uri,
+				Diagnostics: diagnostics,
 			},
 		}
 		data, _ = json.Marshal(call)
-		s.jsonrpc.SendMessage(data)
+		checkerror(s.jsonrpc.SendMessage(data))
 	}
 }
 
-func (s *Server) handleLSNotification(request map[string]interface{}, rpc *JSONRPC, id int) {
-	s.logger.Infof("LS-Notification: (%d) %v", id, request["method"])
-	method := request["method"].(string)
-	marshalled_params, _ := json.Marshal(request["params"])
-	switch method {
-	case "textDocument/publishDiagnostics":
+func (s *Server) handleLSNotification(request map[string]interface{}, _ *JSONRPC, id string) {
+	s.logger.Infof("LS-Notification: (%s) %v", id, request["method"])
+	method, ok := request["method"].(string)
+	checkok(ok)
+
+	marshalledParams, _ := json.Marshal(request["params"])
+
+	if method == "textDocument/publishDiagnostics" {
 		var diags protocol.PublishDiagnosticsParams
-		json.Unmarshal(marshalled_params, &diags)
+
+		checkerror(json.Unmarshal(marshalledParams, &diags))
 		s.diagnostics[diags.URI] = diags.Diagnostics
 		s.publishDiagnostics()
 	}
 }
 
 func ExtractIntValue(idValue interface{}) int {
-	switch id := idValue.(type) {
+	switch value := idValue.(type) {
 	case float64:
-		return int(id)
+		return int(value)
 	case string:
-		r, _ := strconv.Atoi(id)
+		r, err := strconv.Atoi(value)
+		checkerror(err)
+
 		return r
 	case int:
-		return id
+		return value
 	default:
-		panic(id)
+		panic(value)
 	}
 }
+
 func (s *Server) InitializeAll(rootURI *string, clientCaps protocol.ClientCapabilities) {
 	for _, element := range s.jsonrpcs {
 		traceValue := protocol.TraceValueVerbose
@@ -379,44 +455,55 @@ func (s *Server) InitializeAll(rootURI *string, clientCaps protocol.ClientCapabi
 			},
 		}
 		data, _ := json.Marshal(call)
-		element.SendMessage(data)
+		checkerror(element.SendMessage(data))
 	}
+
 	for {
-		if s.initialized[0] && s.initialized[1] && s.initialized[2] {
+		s.mu.Lock()
+		if s.initialized["yaml"] && s.initialized["json"] && s.initialized["xml"] {
+			s.mu.Unlock()
 			return
 		}
+		s.mu.Unlock()
 	}
 }
 
-func (s *Server) redirectRequest(id int, request map[string]interface{}) {
-	newSeq := ExtractIntValue(request["id"]) + (id * 1000000)
-	s.logger.Infof("Redirecting %v to %d as new ID %v", request["method"], id, newSeq)
+func (s *Server) redirectRequest(id string, request map[string]interface{}) {
+	newSeq := ExtractIntValue(request["id"]) + (LanguageServerFactor * str2int(id))
+	s.logger.Infof("Redirecting %v to %v as new ID %v", request["method"], id, newSeq)
 	request["id"] = newSeq
 	data, _ := json.Marshal(request)
+
 	s.mu.Lock()
 	s.pendingRequests.Insert(newSeq)
 	s.mu.Unlock()
-	s.jsonrpcs[id-1].SendMessage(data)
+	checkerror(s.jsonrpcs[id].SendMessage(data))
 }
 
 func (s *Server) handleCall(request map[string]interface{}) {
-	serviceMethod := request["method"].(string)
+	serviceMethod, ok := request["method"].(string)
+	checkok(ok)
+
 	seq := request["id"]
-	marshalled_params, _ := json.Marshal(request["params"])
+	marshalledParams, _ := json.Marshal(request["params"])
+
 	s.logger.Infof("Got call %v", serviceMethod)
 
 	var response interface{}
 
 	switch serviceMethod {
 	case "initialize":
-		var initParams protocol.InitializeParams
-		json.Unmarshal(marshalled_params, &initParams)
-		s.logger.Infof("Client caps: %v", initParams.Capabilities)
-		s.InitializeAll(initParams.RootURI, initParams.Capabilities)
-		sync_type := protocol.TextDocumentSyncKindFull
-		server_caps := protocol.InitializeResult{
+		var params protocol.InitializeParams
+
+		checkerror(json.Unmarshal(marshalledParams, &params))
+		s.logger.Infof("Client caps: %v", params.Capabilities)
+		s.InitializeAll(params.RootURI, params.Capabilities)
+
+		syncType := protocol.TextDocumentSyncKindFull
+		version := "0.0.1"
+		serverCaps := protocol.InitializeResult{
 			Capabilities: protocol.ServerCapabilities{
-				TextDocumentSync: &sync_type,
+				TextDocumentSync: &syncType,
 				CompletionProvider: &protocol.CompletionOptions{
 					TriggerCharacters: []string{",", ".", ":", "_", "-"},
 				},
@@ -426,12 +513,16 @@ func (s *Server) handleCall(request map[string]interface{}) {
 				CodeActionProvider:         true,
 				DocumentFormattingProvider: true,
 			},
+			ServerInfo: &protocol.InitializeResultServerInfo{
+				Name:    "proxy-ls",
+				Version: &version,
+			},
 		}
 		response = map[string]interface{}{
 			"jsonrpc": "2.0",
 			"id":      seq,
 			"result": map[string]interface{}{
-				"capabilities": server_caps,
+				"capabilities": serverCaps,
 				"serverInfo": map[string]interface{}{
 					"name":    "proxy-ls",
 					"version": "0.1",
@@ -440,39 +531,38 @@ func (s *Server) handleCall(request map[string]interface{}) {
 		}
 	case "textDocument/documentSymbol":
 		var params protocol.DocumentSymbolParams
-		json.Unmarshal(marshalled_params, &params)
-		n := s.selectLSForFile(string(params.TextDocument.URI), "")
-		if n != 0 {
-			s.redirectRequest(n, request)
-		}
+
+		checkerror(json.Unmarshal(marshalledParams, &params))
+
+		n := s.selectLSForFile(params.TextDocument.URI, "")
+		s.redirectRequest(n, request)
 	case "textDocument/formatting":
 		var params protocol.DocumentFormattingParams
-		json.Unmarshal(marshalled_params, &params)
-		n := s.selectLSForFile(string(params.TextDocument.URI), "")
-		if n != 0 {
-			s.redirectRequest(n, request)
-		}
+
+		checkerror(json.Unmarshal(marshalledParams, &params))
+
+		n := s.selectLSForFile(params.TextDocument.URI, "")
+		s.redirectRequest(n, request)
 	case "textDocument/codeAction":
 		var params protocol.CodeActionParams
-		json.Unmarshal(marshalled_params, &params)
-		n := s.selectLSForFile(string(params.TextDocument.URI), "")
-		if n != 0 {
-			s.redirectRequest(n, request)
-		}
+
+		checkerror(json.Unmarshal(marshalledParams, &params))
+
+		n := s.selectLSForFile(params.TextDocument.URI, "")
+		s.redirectRequest(n, request)
 	case "textDocument/completion":
 		var params protocol.CompletionParams
-		json.Unmarshal(marshalled_params, &params)
-		n := s.selectLSForFile(string(params.TextDocument.URI), "")
-		if n != 0 {
-			s.redirectRequest(n, request)
-		}
+
+		checkerror(json.Unmarshal(marshalledParams, &params))
+
+		n := s.selectLSForFile(params.TextDocument.URI, "")
+		s.redirectRequest(n, request)
 	case "textDocument/hover":
 		var params protocol.HoverParams
-		json.Unmarshal(marshalled_params, &params)
-		n := s.selectLSForFile(string(params.TextDocument.URI), "")
-		if n != 0 {
-			s.redirectRequest(n, request)
-		}
+		checkerror(json.Unmarshal(marshalledParams, &params))
+
+		n := s.selectLSForFile(params.TextDocument.URI, "")
+		s.redirectRequest(n, request)
 	default:
 		response = map[string]interface{}{
 			"jsonrpc": "2.0",
@@ -489,39 +579,34 @@ func (s *Server) handleCall(request map[string]interface{}) {
 	}
 
 	responseData, err := json.Marshal(response)
-	if err != nil {
-		s.logger.Infof("Error encoding response: %s\n", err)
-		return
-	}
+	checkerror(err)
 
-	err = s.jsonrpc.SendMessage(responseData)
-	if err != nil {
-		s.logger.Infof("Error sending response: %s\n", err)
-		return
-	}
+	checkerror(s.jsonrpc.SendMessage(responseData))
 }
 
-func (s *Server) selectLSForFile(name string, contents string) int {
+func (s *Server) selectLSForFile(name string, contents string) string {
 	if strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
-		return 1
+		return "yaml"
 	} else if strings.HasSuffix(name, ".json") {
 		if strings.Contains(contents, "\"build-options\"") && strings.Contains(contents, "\"modules\"") && strings.Contains(contents, "\"finish-args\"") &&
-			(strings.Contains(contents, "\"app-id\"") || strings.Contains(contents, "\"app-id\"")) {
+			(strings.Contains(contents, "\"app-id\"") || strings.Contains(contents, "\"id\"")) {
 			parts := strings.Split(name, "/")
 			s.flatpakManifests.Insert("/" + parts[len(parts)-1])
 			s.logger.Infof("Found flatpak manifest %s", parts[len(parts)-1])
 		}
-		return 2
+
+		return "json"
 	} else if strings.HasSuffix(name, ".xml") || strings.HasSuffix(name, ".doap") {
-		return 3
+		return "xml"
 	}
-	return 0
+
+	panic(name)
 }
 
-func (s *Server) redirectNotification(n int, request map[string]interface{}, uri protocol.URI) {
-	s.logger.Infof("Redirecting %s to %v", request["method"].(string), n)
+func (s *Server) redirectNotification(id string, request map[string]interface{}) {
+	s.logger.Infof("Redirecting %v to %v", request["method"], id)
 	data, _ := json.Marshal(request)
-	s.jsonrpcs[n-1].SendMessage(data)
+	checkerror(s.jsonrpcs[id].SendMessage(data))
 }
 
 func (s *Server) updateConfigs() {
@@ -539,46 +624,45 @@ func (s *Server) updateConfigs() {
 	}
 	data, _ := json.Marshal(call)
 	s.logger.Infof("json/schemaAssociations: %s", string(data))
-	s.jsonrpcs[1].SendMessage(data)
+	checkerror(s.jsonrpcs["json"].SendMessage(data))
 	s.mu.Unlock()
 }
 
 func (s *Server) handleNotification(request map[string]interface{}) {
 	// Handle notifications here if needed
-	serviceMethod := request["method"].(string)
+	serviceMethod, ok := request["method"].(string)
+	checkok(ok)
 	s.logger.Infof("Received notification %s", serviceMethod)
-	marshalled_params, _ := json.Marshal(request["params"])
+
+	marshalledParams, _ := json.Marshal(request["params"])
 
 	switch serviceMethod {
 	case "textDocument/didOpen":
-		var initParams protocol.DidOpenTextDocumentParams
-		json.Unmarshal(marshalled_params, &initParams)
-		n := s.selectLSForFile(string(initParams.TextDocument.URI), initParams.TextDocument.Text)
-		if n != 0 {
-			s.redirectNotification(n, request, initParams.TextDocument.URI)
-		}
+		var params protocol.DidOpenTextDocumentParams
+		checkerror(json.Unmarshal(marshalledParams, &params))
+
+		n := s.selectLSForFile(params.TextDocument.URI, params.TextDocument.Text)
+		s.redirectNotification(n, request)
+
 		s.updateConfigs()
 	case "textDocument/didChange":
-		var initParams protocol.DidChangeTextDocumentParams
-		json.Unmarshal(marshalled_params, &initParams)
-		n := s.selectLSForFile(string(initParams.TextDocument.URI), "")
-		if n != 0 {
-			s.redirectNotification(n, request, initParams.TextDocument.URI)
-		}
+		var params protocol.DidChangeTextDocumentParams
+		checkerror(json.Unmarshal(marshalledParams, &params))
+
+		n := s.selectLSForFile(params.TextDocument.URI, "")
+		s.redirectNotification(n, request)
 	case "textDocument/didSave":
-		var initParams protocol.DidSaveTextDocumentParams
-		json.Unmarshal(marshalled_params, &initParams)
-		n := s.selectLSForFile(string(initParams.TextDocument.URI), "")
-		if n != 0 {
-			s.redirectNotification(n, request, initParams.TextDocument.URI)
-		}
+		var params protocol.DidSaveTextDocumentParams
+		checkerror(json.Unmarshal(marshalledParams, &params))
+
+		n := s.selectLSForFile(params.TextDocument.URI, "")
+		s.redirectNotification(n, request)
 	case "textDocument/didClose":
-		var initParams protocol.DidCloseTextDocumentParams
-		json.Unmarshal(marshalled_params, &initParams)
-		n := s.selectLSForFile(string(initParams.TextDocument.URI), "")
-		if n != 0 {
-			s.redirectNotification(n, request, initParams.TextDocument.URI)
-		}
+		var params protocol.DidCloseTextDocumentParams
+		checkerror(json.Unmarshal(marshalledParams, &params))
+
+		n := s.selectLSForFile(params.TextDocument.URI, "")
+		s.redirectNotification(n, request)
 	}
 }
 
@@ -587,17 +671,20 @@ func (s *Server) Serve() {
 		messageData, err := s.jsonrpc.ReadMessage()
 		if err != nil {
 			s.logger.Infof("(server<->editor): Error reading message: %s\n", err)
+
 			return
 		}
 
 		var request map[string]interface{}
 		if err := json.Unmarshal(messageData, &request); err != nil {
 			s.logger.Infof("Error decoding request: %s\n", err)
+
 			return
 		}
 
 		if _, ok := request["error"]; ok {
 			s.logger.Warnf("Received error from editor: %v", request["error"])
+
 			continue
 		}
 

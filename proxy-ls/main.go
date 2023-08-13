@@ -12,7 +12,7 @@ import (
 	"syscall"
 
 	"github.com/hashicorp/go-set"
-	"github.com/sourcegraph/go-lsp"
+	protocol "github.com/tliron/glsp/protocol_3_16"
 	"github.com/withmandala/go-log"
 )
 
@@ -147,8 +147,9 @@ type Server struct {
 	yaml_language_server *ProcessIO
 	jsonrpcs             [3]*JSONRPC
 	initialized          [3]bool
-	diagnostics          map[lsp.DocumentURI]([]lsp.Diagnostic)
+	diagnostics          map[protocol.URI]([]protocol.Diagnostic)
 	pendingRequests      *set.Set[int]
+	flatpakManifests     *set.Set[string]
 }
 
 func (s *Server) AddProcess(command string) (*ProcessIO, error) {
@@ -174,10 +175,11 @@ func (s *Server) AddProcess(command string) (*ProcessIO, error) {
 
 func NewServer(jsonrpc *JSONRPC) *Server {
 	server := &Server{
-		logger:          log.New(os.Stderr),
-		jsonrpc:         jsonrpc,
-		diagnostics:     make(map[lsp.DocumentURI]([]lsp.Diagnostic)),
-		pendingRequests: set.New[int](5),
+		logger:           log.New(os.Stderr),
+		jsonrpc:          jsonrpc,
+		diagnostics:      make(map[protocol.URI]([]protocol.Diagnostic)),
+		pendingRequests:  set.New[int](5),
+		flatpakManifests: set.New[string](2),
 	}
 	json_ls, err := server.AddProcess("vscode-json-languageserver --stdio")
 	if err != nil {
@@ -230,19 +232,31 @@ func (s *Server) setupLS(p *ProcessIO, id int) {
 }
 
 func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, id int) {
-	s.logger.Infof("Response: (%d) %d %v", id, ExtractIntValue(request["id"]), request)
+	s.logger.Infof("Response: (%d) %d", id, ExtractIntValue(request["id"]))
 	if _, ok := request["error"]; ok {
 		s.logger.Warnf("Received error from %d: %v", id, request["error"])
 	}
 	if _, ok := request["params"]; ok {
+		stringified, _ := json.Marshal(request["params"])
 		if id != 3 {
 			return
 		}
 		method := request["method"].(string)
-		s.logger.Infof("Querying config...: %v", request["params"])
-		if method != "workspace/configuration" {
+		if method == "client/registerCapability" {
+			call := map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      request["id"],
+				"result":  nil,
+			}
+			data, _ := json.Marshal(call)
+			s.jsonrpcs[id-1].SendMessage(data)
 			return
 		}
+		if method != "workspace/configuration" {
+			s.logger.Warnf("Unable to handle %s with params %s", method, stringified)
+			return
+		}
+		s.logger.Infof("Querying config...: %s", stringified)
 		requested := request["params"].(map[string]interface{})["items"].([]interface{})
 		var returned []interface{}
 		for _, item := range requested {
@@ -296,9 +310,9 @@ func (s *Server) publishDiagnostics() {
 		call := map[string]interface{}{
 			"jsonrpc": "2.0",
 			"method":  "textDocument/publishDiagnostics",
-			"params": lsp.PublishDiagnosticsParams{
+			"params": protocol.PublishDiagnosticsParams{
 				URI:         k,
-				Diagnostics: []lsp.Diagnostic{},
+				Diagnostics: []protocol.Diagnostic{},
 			},
 		}
 		data, _ := json.Marshal(call)
@@ -306,7 +320,7 @@ func (s *Server) publishDiagnostics() {
 		call = map[string]interface{}{
 			"jsonrpc": "2.0",
 			"method":  "textDocument/publishDiagnostics",
-			"params": lsp.PublishDiagnosticsParams{
+			"params": protocol.PublishDiagnosticsParams{
 				URI:         k,
 				Diagnostics: v,
 			},
@@ -322,7 +336,7 @@ func (s *Server) handleLSNotification(request map[string]interface{}, rpc *JSONR
 	marshalled_params, _ := json.Marshal(request["params"])
 	switch method {
 	case "textDocument/publishDiagnostics":
-		var diags lsp.PublishDiagnosticsParams
+		var diags protocol.PublishDiagnosticsParams
 		json.Unmarshal(marshalled_params, &diags)
 		s.diagnostics[diags.URI] = diags.Diagnostics
 		s.publishDiagnostics()
@@ -342,17 +356,26 @@ func ExtractIntValue(idValue interface{}) int {
 		panic(id)
 	}
 }
-func (s *Server) InitializeAll(rootURI lsp.DocumentURI, clientCaps lsp.ClientCapabilities) {
+func (s *Server) InitializeAll(rootURI *string, clientCaps protocol.ClientCapabilities) {
 	for _, element := range s.jsonrpcs {
+		traceValue := protocol.TraceValueVerbose
+		version := "0.0.1"
 		call := map[string]interface{}{
 			"jsonrpc": "2.0",
 			"id":      1,
 			"method":  "initialize",
-			"params": lsp.InitializeParams{
-				RootURI:      rootURI,
-				Trace:        "verbose",
-				ClientInfo:   lsp.ClientInfo{Name: "proxy-ls", Version: "0.0.1"},
+			"params": protocol.InitializeParams{
+				RootURI: rootURI,
+				Trace:   &traceValue,
+				ClientInfo: &struct {
+					Name    string  `json:"name"`
+					Version *string `json:"version,omitempty"`
+				}{Name: "proxy-ls", Version: &version},
 				Capabilities: clientCaps,
+				InitializationOptions: map[string]interface{}{
+					"handledSchemaProtocols": []string{"file", "http", "https"},
+					"provideFormatter":       true,
+				},
 			},
 		}
 		data, _ := json.Marshal(call)
@@ -386,16 +409,15 @@ func (s *Server) handleCall(request map[string]interface{}) {
 
 	switch serviceMethod {
 	case "initialize":
-		var initParams lsp.InitializeParams
+		var initParams protocol.InitializeParams
 		json.Unmarshal(marshalled_params, &initParams)
+		s.logger.Infof("Client caps: %v", initParams.Capabilities)
 		s.InitializeAll(initParams.RootURI, initParams.Capabilities)
-		sync_type := lsp.TDSKFull
-		server_caps := lsp.InitializeResult{
-			Capabilities: lsp.ServerCapabilities{
-				TextDocumentSync: &lsp.TextDocumentSyncOptionsOrKind{
-					Kind: &sync_type,
-				},
-				CompletionProvider: &lsp.CompletionOptions{
+		sync_type := protocol.TextDocumentSyncKindFull
+		server_caps := protocol.InitializeResult{
+			Capabilities: protocol.ServerCapabilities{
+				TextDocumentSync: &sync_type,
+				CompletionProvider: &protocol.CompletionOptions{
 					TriggerCharacters: []string{",", ".", ":", "_", "-"},
 				},
 				HoverProvider:              true,
@@ -417,28 +439,35 @@ func (s *Server) handleCall(request map[string]interface{}) {
 			},
 		}
 	case "textDocument/documentSymbol":
-		var params lsp.DocumentSymbolParams
+		var params protocol.DocumentSymbolParams
 		json.Unmarshal(marshalled_params, &params)
 		n := s.selectLSForFile(string(params.TextDocument.URI), "")
 		if n != 0 {
 			s.redirectRequest(n, request)
 		}
 	case "textDocument/formatting":
-		var params lsp.DocumentFormattingParams
+		var params protocol.DocumentFormattingParams
 		json.Unmarshal(marshalled_params, &params)
 		n := s.selectLSForFile(string(params.TextDocument.URI), "")
 		if n != 0 {
 			s.redirectRequest(n, request)
 		}
 	case "textDocument/codeAction":
-		var params lsp.CodeActionParams
+		var params protocol.CodeActionParams
 		json.Unmarshal(marshalled_params, &params)
 		n := s.selectLSForFile(string(params.TextDocument.URI), "")
 		if n != 0 {
 			s.redirectRequest(n, request)
 		}
 	case "textDocument/completion":
-		var params lsp.CompletionParams
+		var params protocol.CompletionParams
+		json.Unmarshal(marshalled_params, &params)
+		n := s.selectLSForFile(string(params.TextDocument.URI), "")
+		if n != 0 {
+			s.redirectRequest(n, request)
+		}
+	case "textDocument/hover":
+		var params protocol.HoverParams
 		json.Unmarshal(marshalled_params, &params)
 		n := s.selectLSForFile(string(params.TextDocument.URI), "")
 		if n != 0 {
@@ -476,6 +505,12 @@ func (s *Server) selectLSForFile(name string, contents string) int {
 	if strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
 		return 1
 	} else if strings.HasSuffix(name, ".json") {
+		if strings.Contains(contents, "\"build-options\"") && strings.Contains(contents, "\"modules\"") && strings.Contains(contents, "\"finish-args\"") &&
+			(strings.Contains(contents, "\"app-id\"") || strings.Contains(contents, "\"app-id\"")) {
+			parts := strings.Split(name, "/")
+			s.flatpakManifests.Insert("/" + parts[len(parts)-1])
+			s.logger.Infof("Found flatpak manifest %s", parts[len(parts)-1])
+		}
 		return 2
 	} else if strings.HasSuffix(name, ".xml") || strings.HasSuffix(name, ".doap") {
 		return 3
@@ -483,28 +518,29 @@ func (s *Server) selectLSForFile(name string, contents string) int {
 	return 0
 }
 
-func (s *Server) redirectNotification(n int, request map[string]interface{}, uri lsp.DocumentURI) {
+func (s *Server) redirectNotification(n int, request map[string]interface{}, uri protocol.URI) {
 	s.logger.Infof("Redirecting %s to %v", request["method"].(string), n)
 	data, _ := json.Marshal(request)
 	s.jsonrpcs[n-1].SendMessage(data)
-	if n == 2 { // JSON
-		s.logger.Info("Doing another didChangeWatchedFiles notification")
-		call := map[string]interface{}{
-			"jsonrpc": "2.0",
-			"method":  "workspace/didChangeWatchedFiles",
-			"params": lsp.DidChangeWatchedFilesParams{
-				Changes: []lsp.FileEvent{
-					{
-						URI:  uri,
-						Type: lsp.Changed,
-					},
-				},
-			},
-		}
-		data, _ := json.Marshal(call)
-		s.jsonrpcs[n-1].SendMessage(data)
-		s.initialized[n-1] = true
+}
+
+func (s *Server) updateConfigs() {
+	s.mu.Lock()
+	schemas := [](map[string]interface{}){
+		map[string]interface{}{
+			"uri":       "https://raw.githubusercontent.com/flatpak/flatpak-builder/main/data/flatpak-manifest.schema.json",
+			"fileMatch": s.flatpakManifests.Slice(),
+		},
 	}
+	call := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "json/schemaAssociations",
+		"params":  []any{schemas},
+	}
+	data, _ := json.Marshal(call)
+	s.logger.Infof("json/schemaAssociations: %s", string(data))
+	s.jsonrpcs[1].SendMessage(data)
+	s.mu.Unlock()
 }
 
 func (s *Server) handleNotification(request map[string]interface{}) {
@@ -515,28 +551,29 @@ func (s *Server) handleNotification(request map[string]interface{}) {
 
 	switch serviceMethod {
 	case "textDocument/didOpen":
-		var initParams lsp.DidOpenTextDocumentParams
+		var initParams protocol.DidOpenTextDocumentParams
 		json.Unmarshal(marshalled_params, &initParams)
 		n := s.selectLSForFile(string(initParams.TextDocument.URI), initParams.TextDocument.Text)
 		if n != 0 {
 			s.redirectNotification(n, request, initParams.TextDocument.URI)
 		}
+		s.updateConfigs()
 	case "textDocument/didChange":
-		var initParams lsp.DidChangeTextDocumentParams
+		var initParams protocol.DidChangeTextDocumentParams
 		json.Unmarshal(marshalled_params, &initParams)
-		n := s.selectLSForFile(string(initParams.TextDocument.URI), initParams.ContentChanges[0].Text)
+		n := s.selectLSForFile(string(initParams.TextDocument.URI), "")
 		if n != 0 {
 			s.redirectNotification(n, request, initParams.TextDocument.URI)
 		}
 	case "textDocument/didSave":
-		var initParams lsp.DidSaveTextDocumentParams
+		var initParams protocol.DidSaveTextDocumentParams
 		json.Unmarshal(marshalled_params, &initParams)
 		n := s.selectLSForFile(string(initParams.TextDocument.URI), "")
 		if n != 0 {
 			s.redirectNotification(n, request, initParams.TextDocument.URI)
 		}
 	case "textDocument/didClose":
-		var initParams lsp.DidCloseTextDocumentParams
+		var initParams protocol.DidCloseTextDocumentParams
 		json.Unmarshal(marshalled_params, &initParams)
 		n := s.selectLSForFile(string(initParams.TextDocument.URI), "")
 		if n != 0 {

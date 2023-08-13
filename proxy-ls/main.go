@@ -239,6 +239,7 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 			return
 		}
 		method := request["method"].(string)
+		s.logger.Infof("Querying config...: %v", request["params"])
 		if method != "workspace/configuration" {
 			return
 		}
@@ -431,6 +432,13 @@ func (s *Server) handleCall(request map[string]interface{}) {
 		}
 	case "textDocument/codeAction":
 		var params lsp.CodeActionParams
+		json.Unmarshal(marshalled_params, &params)
+		n := s.selectLSForFile(string(params.TextDocument.URI), "")
+		if n != 0 {
+			s.redirectRequest(n, request)
+		}
+	case "textDocument/completion":
+		var params lsp.CompletionParams
 		json.Unmarshal(marshalled_params, &params)
 		n := s.selectLSForFile(string(params.TextDocument.URI), "")
 		if n != 0 {

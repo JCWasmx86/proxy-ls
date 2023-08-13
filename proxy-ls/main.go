@@ -438,13 +438,15 @@ func (s *Server) InitializeAll(rootURI *string, clientCaps protocol.ClientCapabi
 	for _, element := range s.jsonrpcs {
 		traceValue := protocol.TraceValueVerbose
 		version := "0.0.1"
+		pid := int32(syscall.Getpid())
 		call := map[string]interface{}{
 			"jsonrpc": "2.0",
 			"id":      1,
 			"method":  "initialize",
 			"params": protocol.InitializeParams{
-				RootURI: rootURI,
-				Trace:   &traceValue,
+				ProcessID: &pid,
+				RootURI:   rootURI,
+				Trace:     &traceValue,
 				ClientInfo: &struct {
 					Name    string  `json:"name"`
 					Version *string `json:"version,omitempty"`

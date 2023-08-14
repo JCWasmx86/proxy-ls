@@ -380,6 +380,7 @@ func (s *Server) selectLSForFile(name string, contents string) string {
 			parts := strings.Split(name, "/")
 			s.flatpakManifests.Insert("/" + parts[len(parts)-1])
 			s.logger.Infof("Found flatpak manifest %s", parts[len(parts)-1])
+			s.updateConfigs()
 		}
 
 		return "json"

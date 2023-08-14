@@ -447,7 +447,7 @@ func (s *Server) updateConfigs() {
 	for _, gschema := range s.gschemaFiles.Slice() {
 		schemas = append(schemas, map[string]interface{}{
 			"pattern":  gschema,
-			"systemId": "file:///tmp/gschema.dtd",
+			"systemId": "https://gitlab.gnome.org/GNOME/glib/-/raw/HEAD/gio/gschema.dtd",
 		})
 	}
 	call = map[string]interface{}{

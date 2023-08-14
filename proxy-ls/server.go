@@ -24,6 +24,7 @@ type Server struct {
 	diagnostics      map[protocol.URI]([]protocol.Diagnostic)
 	pendingRequests  *set.Set[int]
 	flatpakManifests *set.Set[string]
+	gschemaFiles     *set.Set[string]
 }
 
 func NewServer(jsonrpc *JSONRPC) *Server {
@@ -32,7 +33,8 @@ func NewServer(jsonrpc *JSONRPC) *Server {
 		jsonrpc:          jsonrpc,
 		diagnostics:      make(map[protocol.URI]([]protocol.Diagnostic)),
 		pendingRequests:  set.New[int](PendingRequestsSize),
-		flatpakManifests: set.New[string](FlatpakManifestSize),
+		flatpakManifests: set.New[string](AverageFileCount),
+		gschemaFiles:     set.New[string](AverageFileCount),
 		jsonLS:           CreateProcessFromCommand("vscode-json-languageserver --stdio"),
 		xmlLS:            CreateProcessFromCommand("lemminx"),
 		yamlLS:           CreateProcessFromCommand("yaml-language-server --stdio"),
@@ -237,6 +239,27 @@ func (s *Server) InitializeAll(rootURI *string, clientCaps protocol.ClientCapabi
 				InitializationOptions: map[string]interface{}{
 					"handledSchemaProtocols": []string{"file", "http", "https"},
 					"provideFormatter":       true,
+					"settings": map[string]interface{}{
+						"xml": map[string]interface{}{
+							"logs": map[string]interface{}{
+								"client": true,
+								"file":   "/tmp/lemminx.log",
+							},
+							"trace": map[string]interface{}{
+								"server": "verbose",
+							},
+							"validation": map[string]interface{}{
+								"enabled":                 true,
+								"resolveExternalEntities": true,
+								"schema": map[string]interface{}{
+									"enabled": "always",
+								},
+							},
+							"downloadExternalResources": map[string]interface{}{
+								"enabled": true,
+							},
+						},
+					},
 				},
 			},
 		}
@@ -385,6 +408,12 @@ func (s *Server) selectLSForFile(name string, contents string) string {
 
 		return "json"
 	} else if strings.HasSuffix(name, ".xml") || strings.HasSuffix(name, ".doap") {
+		if strings.HasSuffix(name, ".gschema.xml") {
+			parts := strings.Split(name, "/")
+			s.gschemaFiles.Insert(strings.Replace(name, "file://", "", -1))
+			s.logger.Infof("Found .gschema.xml file %s", parts[len(parts)-1])
+			s.updateConfigs()
+		}
 		return "xml"
 	}
 
@@ -413,6 +442,45 @@ func (s *Server) updateConfigs() {
 	data, _ := json.Marshal(call)
 	s.logger.Infof("json/schemaAssociations: %s", string(data))
 	checkerror(s.jsonrpcs["json"].SendMessage(data))
+
+	schemas = [](map[string]interface{}){}
+	for _, gschema := range s.gschemaFiles.Slice() {
+		schemas = append(schemas, map[string]interface{}{
+			"pattern":  gschema,
+			"systemId": "file:///tmp/gschema.dtd",
+		})
+	}
+	call = map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "workspace/didChangeConfiguration",
+		"params": map[string]interface{}{
+			"settings": map[string]interface{}{
+				"xml": map[string]interface{}{
+					"fileAssociations": schemas,
+					"logs": map[string]interface{}{
+						"client": true,
+						"file":   "/tmp/lemminx.log",
+					},
+					"trace": map[string]interface{}{
+						"server": "verbose",
+					},
+					"validation": map[string]interface{}{
+						"enabled":                 true,
+						"resolveExternalEntities": true,
+						"schema": map[string]interface{}{
+							"enabled": "always",
+						},
+					},
+					"downloadExternalResources": map[string]interface{}{
+						"enabled": true,
+					},
+				},
+			},
+		},
+	}
+	data, _ = json.Marshal(call)
+	s.logger.Infof("workspace/didChangeConfiguration: %s", string(data))
+	checkerror(s.jsonrpcs["xml"].SendMessage(data))
 	s.mu.Unlock()
 }
 

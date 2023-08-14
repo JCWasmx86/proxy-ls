@@ -3,7 +3,7 @@ package main
 const (
 	LanguageServerFactor = 1000000
 	PendingRequestsSize  = 5
-	FlatpakManifestSize  = 2
+	AverageFileCount     = 2
 	LanguageServerCount  = 3
 	DefaultTabSize       = 2
 	YamlID               = 1

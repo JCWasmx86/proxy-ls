@@ -1,6 +1,8 @@
+PREFIX ?= /usr/local
+MMAKE = PREFIX=$(PREFIX) $(MAKE)
 all:
-	cd proxy-ls && go build -v
+	cd proxy-ls && $(MMAKE)
 install: all
-	cd proxy-ls && cp proxy-ls /usr/local/bin/proxy-ls
+	cd proxy-ls && $(MMAKE) install
 format:
-	cd proxy-ls && go fmt
+	cd proxy-ls && $(MMAKE) format

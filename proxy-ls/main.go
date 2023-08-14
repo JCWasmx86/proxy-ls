@@ -2,8 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -26,153 +24,6 @@ const (
 	JSONID               = 2
 	XMLID                = 3
 )
-
-func checkerror(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
-func checkok(ok bool) {
-	if !ok {
-		panic("")
-	}
-}
-
-type ProcessIO struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout io.ReadCloser
-}
-
-func (p *ProcessIO) Read(data []byte) (int, error) {
-	return p.stdout.Read(data)
-}
-
-func (p *ProcessIO) Write(data []byte) (int, error) {
-	return p.stdin.Write(data)
-}
-
-func (p *ProcessIO) Close() error {
-	err := p.stdin.Close()
-	if err != nil {
-		return err
-	}
-
-	err = p.stdout.Close()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-type JSONRPC struct {
-	in  io.ReadCloser
-	out io.WriteCloser
-}
-
-type SyscallWriteCloser struct {
-	fd int
-}
-
-func (p *SyscallWriteCloser) Write(data []byte) (int, error) {
-	return syscall.Write(p.fd, data)
-}
-
-func (p *SyscallWriteCloser) Close() error {
-	return syscall.Close(p.fd)
-}
-
-func NewJSONRPC() *JSONRPC {
-	realSout, _ := syscall.Dup(syscall.Stdout)
-	checkerror(syscall.Dup2(syscall.Stderr, syscall.Stdout))
-
-	return &JSONRPC{
-		in: os.Stdin,
-		out: &SyscallWriteCloser{
-			fd: realSout,
-		},
-	}
-}
-
-func (rpc *JSONRPC) ReadMessage() ([]byte, error) {
-	var contentLength int
-	var state int
-
-	// Read headers
-	tmpData := make([]byte, 1)
-	header := ""
-	breakFromLoop := false
-
-	for {
-		if breakFromLoop {
-			break
-		}
-		_, err := rpc.in.Read(tmpData)
-		if err != nil {
-			return nil, err
-		}
-
-		switch tmpData[0] {
-		case '\r':
-			if state == 2 {
-				state = 3
-			} else {
-				state = 1
-			}
-		case '\n':
-			if state == 3 {
-				breakFromLoop = true
-				break
-			}
-
-			state = 2
-
-			if strings.HasPrefix(header, "Content-Length:") {
-				numberAsStr := strings.TrimSpace(strings.Split(header, ":")[1])
-				contentLength, _ = strconv.Atoi(numberAsStr)
-			}
-
-			header = ""
-		default:
-			header += string(tmpData)
-			state = 5
-		}
-	}
-
-	// Read JSON-RPC message
-	messageData := make([]byte, contentLength)
-
-	_, err := rpc.in.Read(messageData)
-	if err != nil {
-		return nil, fmt.Errorf("ReadMessage(): error reading message data: %w", err)
-	}
-
-	return messageData, nil
-}
-
-func (rpc *JSONRPC) SendMessage(message []byte) error {
-	if string(message) == "null" {
-		panic(message)
-	}
-
-	contentLength := len(message)
-	headers := fmt.Sprintf("Content-Length: %d\r\n\r\n", contentLength)
-
-	// Write headers and JSON-RPC message
-	_, err := rpc.out.Write([]byte(headers))
-	if err != nil {
-		return fmt.Errorf("error writing headers: %w", err)
-	}
-
-	_, err = rpc.out.Write(message)
-	if err != nil {
-		return fmt.Errorf("error writing message: %w", err)
-	}
-
-	return nil
-}
 
 type Server struct {
 	logger           *log.Logger
@@ -223,21 +74,15 @@ func NewServer(jsonrpc *JSONRPC) *Server {
 		jsonrpcs:         make(map[string]*JSONRPC, LanguageServerCount),
 		initialized:      make(map[string]bool, LanguageServerCount),
 	}
-	server.jsonrpcs["yaml"] = makeJSONRPC(server.yamlLS)
-	server.jsonrpcs["json"] = makeJSONRPC(server.jsonLS)
-	server.jsonrpcs["xml"] = makeJSONRPC(server.xmlLS)
+	server.jsonrpcs["yaml"] = jsonrpcFromProcessIO(server.yamlLS)
+	server.jsonrpcs["json"] = jsonrpcFromProcessIO(server.jsonLS)
+	server.jsonrpcs["xml"] = jsonrpcFromProcessIO(server.xmlLS)
+
 	go server.runLS(server.jsonrpcs["yaml"], "yaml")
 	go server.runLS(server.jsonrpcs["json"], "json")
 	go server.runLS(server.jsonrpcs["xml"], "xml")
 
 	return server
-}
-
-func makeJSONRPC(p *ProcessIO) *JSONRPC {
-	return &JSONRPC{
-		in:  p.stdout,
-		out: p.stdin,
-	}
 }
 
 func (s *Server) runLS(jsonrpc *JSONRPC, id string) {
@@ -466,6 +311,7 @@ func (s *Server) InitializeAll(rootURI *string, clientCaps protocol.ClientCapabi
 		s.mu.Lock()
 		if s.initialized["yaml"] && s.initialized["json"] && s.initialized["xml"] {
 			s.mu.Unlock()
+
 			return
 		}
 		s.mu.Unlock()

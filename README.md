@@ -10,4 +10,6 @@ yaml-language-server.
 - [ ] GResource XML
 - [ ] DOAP (https://raw.githubusercontent.com/ewilderj/doap/master/schema/doap.rdf)
 - [ ] D-Bus (http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd)
+- [ ] Gitlab CI
+- [ ] Github Actions
 

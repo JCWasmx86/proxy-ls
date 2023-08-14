@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"os"
 	"os/exec"
 )
 
@@ -9,6 +10,27 @@ type ProcessIO struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout io.ReadCloser
+}
+
+func CreateProcessFromCommand(command string) *ProcessIO {
+	cmd := exec.Command("bash", "-c", command)
+	cmd.Stderr = os.Stderr
+	stdin, _ := cmd.StdinPipe()
+	stdout, _ := cmd.StdoutPipe()
+
+	processIO := &ProcessIO{
+		cmd:    cmd,
+		stdin:  stdin,
+		stdout: stdout,
+	}
+
+	go func(p *ProcessIO) {
+		defer p.Close()
+		checkerror(cmd.Start())
+		checkerror(cmd.Wait())
+	}(processIO)
+
+	return processIO
 }
 
 func (p *ProcessIO) Read(data []byte) (int, error) {

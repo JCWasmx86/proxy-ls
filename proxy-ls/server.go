@@ -379,34 +379,34 @@ func (s *Server) handleCall(request map[string]interface{}) {
 
 		checkerror(json.Unmarshal(marshalledParams, &params))
 
-		n := s.selectLSForFile(params.TextDocument.URI, "")
+		n := s.selectLSForFile(params.TextDocument.URI, "", true)
 		s.redirectRequest(n, request)
 	case "textDocument/formatting":
 		var params protocol.DocumentFormattingParams
 
 		checkerror(json.Unmarshal(marshalledParams, &params))
 
-		n := s.selectLSForFile(params.TextDocument.URI, "")
+		n := s.selectLSForFile(params.TextDocument.URI, "", true)
 		s.redirectRequest(n, request)
 	case "textDocument/codeAction":
 		var params protocol.CodeActionParams
 
 		checkerror(json.Unmarshal(marshalledParams, &params))
 
-		n := s.selectLSForFile(params.TextDocument.URI, "")
+		n := s.selectLSForFile(params.TextDocument.URI, "", true)
 		s.redirectRequest(n, request)
 	case "textDocument/completion":
 		var params protocol.CompletionParams
 
 		checkerror(json.Unmarshal(marshalledParams, &params))
 
-		n := s.selectLSForFile(params.TextDocument.URI, "")
+		n := s.selectLSForFile(params.TextDocument.URI, "", true)
 		s.redirectRequest(n, request)
 	case "textDocument/hover":
 		var params protocol.HoverParams
 		checkerror(json.Unmarshal(marshalledParams, &params))
 
-		n := s.selectLSForFile(params.TextDocument.URI, "")
+		n := s.selectLSForFile(params.TextDocument.URI, "", true)
 		s.redirectRequest(n, request)
 	default:
 		response = map[string]interface{}{
@@ -429,17 +429,21 @@ func (s *Server) handleCall(request map[string]interface{}) {
 	checkerror(s.jsonrpc.SendMessage(responseData))
 }
 
-func (s *Server) selectLSForFile(name string, contents string) string {
+func (s *Server) selectLSForFile(name string, contents string, skipUpdate bool) string {
 	if strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
-		s.updateConfigs()
+		if !skipUpdate {
+			s.updateConfigs()
+		}
 		return "yaml"
 	} else if strings.HasSuffix(name, ".json") {
 		if strings.Contains(contents, "\"build-options\"") && strings.Contains(contents, "\"modules\"") && strings.Contains(contents, "\"finish-args\"") &&
 			(strings.Contains(contents, "\"app-id\"") || strings.Contains(contents, "\"id\"")) {
 			parts := strings.Split(name, "/")
-			s.flatpakManifests.Insert("/" + parts[len(parts)-1])
+			s.flatpakManifests.Insert("" + parts[len(parts)-1])
 			s.logger.Infof("Found flatpak manifest %s", parts[len(parts)-1])
-			s.updateConfigs()
+			if !skipUpdate {
+				s.updateConfigs()
+			}
 		}
 
 		return "json"
@@ -448,7 +452,9 @@ func (s *Server) selectLSForFile(name string, contents string) string {
 			parts := strings.Split(name, "/")
 			s.gschemaFiles.Insert(strings.Replace(name, "file://", "", -1))
 			s.logger.Infof("Found .gschema.xml file %s", parts[len(parts)-1])
-			s.updateConfigs()
+			if !skipUpdate {
+				s.updateConfigs()
+			}
 		}
 		return "xml"
 	}
@@ -554,7 +560,7 @@ func (s *Server) handleNotification(request map[string]interface{}) {
 		var params protocol.DidOpenTextDocumentParams
 		checkerror(json.Unmarshal(marshalledParams, &params))
 
-		n := s.selectLSForFile(params.TextDocument.URI, params.TextDocument.Text)
+		n := s.selectLSForFile(params.TextDocument.URI, params.TextDocument.Text, false)
 		s.redirectNotification(n, request)
 
 		s.updateConfigs()
@@ -562,19 +568,19 @@ func (s *Server) handleNotification(request map[string]interface{}) {
 		var params protocol.DidChangeTextDocumentParams
 		checkerror(json.Unmarshal(marshalledParams, &params))
 
-		n := s.selectLSForFile(params.TextDocument.URI, "")
+		n := s.selectLSForFile(params.TextDocument.URI, "", true)
 		s.redirectNotification(n, request)
 	case "textDocument/didSave":
 		var params protocol.DidSaveTextDocumentParams
 		checkerror(json.Unmarshal(marshalledParams, &params))
 
-		n := s.selectLSForFile(params.TextDocument.URI, "")
+		n := s.selectLSForFile(params.TextDocument.URI, "", true)
 		s.redirectNotification(n, request)
 	case "textDocument/didClose":
 		var params protocol.DidCloseTextDocumentParams
 		checkerror(json.Unmarshal(marshalledParams, &params))
 
-		n := s.selectLSForFile(params.TextDocument.URI, "")
+		n := s.selectLSForFile(params.TextDocument.URI, "", true)
 		s.redirectNotification(n, request)
 	}
 }

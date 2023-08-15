@@ -13,4 +13,5 @@ yaml-language-server.
 - [x] Gitlab CI
 - [x] Github Actions
 - [ ] Implement splitup GLSL support: https://github.com/svenstaro/glsl-language-server/issues/18#issuecomment-1569054980
+- [ ] Appstream support
 

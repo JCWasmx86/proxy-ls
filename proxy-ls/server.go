@@ -87,10 +87,6 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 	if _, ok := request["params"]; ok {
 		stringified, _ := json.Marshal(request["params"])
 
-		if id != "xml" {
-			return
-		}
-
 		method, ok := request["method"].(string)
 		checkok(ok)
 
@@ -128,7 +124,31 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 				returned = append(returned, true)
 			case "xml.format.tabSize":
 				returned = append(returned, DefaultTabSize)
+			case "yaml":
+				returned = append(returned, map[string]interface{}{
+					"schemaStore": map[string]interface{}{
+						"enable": true,
+						"url":    "https://www.schemastore.org/api/json/catalog.json",
+					},
+					"trace": map[string]interface{}{
+						"server": "verbose",
+					},
+					"validate": true,
+				})
+			case "[yaml]":
+				returned = append(returned, map[string]interface{}{
+					"editor.tabSize":      2,
+					"editor.insertSpace":  true,
+					"editor.formatOnType": false,
+				})
+			case "editor":
+				returned = append(returned, map[string]interface{}{
+					"detectIndentation": 2,
+				})
+			case "files":
+				returned = append(returned, map[string]interface{}{})
 			default:
+				s.logger.Warnf("Unable to handle configuration %s from %s", section, id)
 				returned = append(returned, nil)
 			}
 		}
@@ -219,6 +239,11 @@ func (s *Server) handleLSNotification(request map[string]interface{}, _ *JSONRPC
 }
 
 func (s *Server) InitializeAll(rootURI *string, clientCaps protocol.ClientCapabilities) {
+	capability := true
+	clientCaps.Workspace.Configuration = &capability
+	clientCaps.TextDocument.RangeFormatting = &protocol.DocumentRangeFormattingClientCapabilities{
+		DynamicRegistration: &capability,
+	}
 	for _, element := range s.jsonrpcs {
 		traceValue := protocol.TraceValueVerbose
 		version := "0.0.1"
@@ -258,6 +283,16 @@ func (s *Server) InitializeAll(rootURI *string, clientCaps protocol.ClientCapabi
 							"downloadExternalResources": map[string]interface{}{
 								"enabled": true,
 							},
+						},
+						"yaml": map[string]interface{}{
+							"schemaStore": map[string]interface{}{
+								"enable": true,
+								"url":    "https://www.schemastore.org/api/json/catalog.json",
+							},
+							"trace": map[string]interface{}{
+								"server": "verbose",
+							},
+							"validate": true,
 						},
 					},
 				},
@@ -396,6 +431,7 @@ func (s *Server) handleCall(request map[string]interface{}) {
 
 func (s *Server) selectLSForFile(name string, contents string) string {
 	if strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
+		s.updateConfigs()
 		return "yaml"
 	} else if strings.HasSuffix(name, ".json") {
 		if strings.Contains(contents, "\"build-options\"") && strings.Contains(contents, "\"modules\"") && strings.Contains(contents, "\"finish-args\"") &&
@@ -481,6 +517,27 @@ func (s *Server) updateConfigs() {
 	data, _ = json.Marshal(call)
 	s.logger.Infof("workspace/didChangeConfiguration: %s", string(data))
 	checkerror(s.jsonrpcs["xml"].SendMessage(data))
+	call = map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "workspace/didChangeConfiguration",
+		"params": map[string]interface{}{
+			"settings": map[string]interface{}{
+				"yaml": map[string]interface{}{
+					"trace": map[string]interface{}{
+						"server": "verbose",
+					},
+					"schemaStore": map[string]interface{}{
+						"enable": true,
+						"url":    "https://www.schemastore.org/api/json/catalog.json",
+					},
+					"validate": true,
+				},
+			},
+		},
+	}
+	data, _ = json.Marshal(call)
+	s.logger.Infof("YAML: workspace/didChangeConfiguration: %s", string(data))
+	checkerror(s.jsonrpcs["yaml"].SendMessage(data))
 	s.mu.Unlock()
 }
 

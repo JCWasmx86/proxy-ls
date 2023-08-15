@@ -5,11 +5,12 @@ yaml-language-server.
 ## Features
 - [x] Flatpak manifest support (JSON)
 - [ ] Flatpak manifest support (YAML)
-- [ ] Support https://www.schemastore.org/json/
+- [ ] Support https://www.schemastore.org/json/ for JSON
+- [x] Support https://www.schemastore.org/json/ for YAML
 - [x] GSchema XML (https://gitlab.gnome.org/GNOME/glib/-/raw/HEAD/gio/gschema.dtd)
 - [ ] GResource XML
 - [ ] DOAP (https://raw.githubusercontent.com/ewilderj/doap/master/schema/doap.rdf)
 - [ ] D-Bus (http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd)
-- [ ] Gitlab CI
-- [ ] Github Actions
+- [x] Gitlab CI
+- [x] Github Actions
 

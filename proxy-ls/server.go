@@ -13,34 +13,36 @@ import (
 )
 
 type Server struct {
-	logger           *log.Logger
-	jsonrpc          *JSONRPC
-	mu               sync.RWMutex
-	jsonLS           *ProcessIO
-	xmlLS            *ProcessIO
-	yamlLS           *ProcessIO
-	jsonrpcs         map[string]*JSONRPC
-	initialized      map[string]bool
-	diagnostics      map[protocol.URI]([]protocol.Diagnostic)
-	pendingRequests  *set.Set[int]
-	flatpakManifests *set.Set[string]
-	gschemaFiles     *set.Set[string]
+	logger               *log.Logger
+	jsonrpc              *JSONRPC
+	mu                   sync.RWMutex
+	jsonLS               *ProcessIO
+	xmlLS                *ProcessIO
+	yamlLS               *ProcessIO
+	jsonrpcs             map[string]*JSONRPC
+	initialized          map[string]bool
+	diagnostics          map[protocol.URI]([]protocol.Diagnostic)
+	pendingRequests      *set.Set[int]
+	flatpakManifests     *set.Set[string]
+	yamlFlatpakManifests *set.Set[string]
+	gschemaFiles         *set.Set[string]
 }
 
 func NewServer(jsonrpc *JSONRPC) *Server {
 	server := &Server{
-		logger:           log.New(os.Stderr),
-		jsonrpc:          jsonrpc,
-		diagnostics:      make(map[protocol.URI]([]protocol.Diagnostic)),
-		pendingRequests:  set.New[int](PendingRequestsSize),
-		flatpakManifests: set.New[string](AverageFileCount),
-		gschemaFiles:     set.New[string](AverageFileCount),
-		jsonLS:           CreateProcessFromCommand("vscode-json-languageserver --stdio"),
-		xmlLS:            CreateProcessFromCommand("lemminx"),
-		yamlLS:           CreateProcessFromCommand("yaml-language-server --stdio"),
-		mu:               sync.RWMutex{},
-		jsonrpcs:         make(map[string]*JSONRPC, LanguageServerCount),
-		initialized:      make(map[string]bool, LanguageServerCount),
+		logger:               log.New(os.Stderr),
+		jsonrpc:              jsonrpc,
+		diagnostics:          make(map[protocol.URI]([]protocol.Diagnostic)),
+		pendingRequests:      set.New[int](PendingRequestsSize),
+		flatpakManifests:     set.New[string](AverageFileCount),
+		yamlFlatpakManifests: set.New[string](AverageFileCount),
+		gschemaFiles:         set.New[string](AverageFileCount),
+		jsonLS:               CreateProcessFromCommand("vscode-json-languageserver --stdio"),
+		xmlLS:                CreateProcessFromCommand("lemminx"),
+		yamlLS:               CreateProcessFromCommand("yaml-language-server --stdio"),
+		mu:                   sync.RWMutex{},
+		jsonrpcs:             make(map[string]*JSONRPC, LanguageServerCount),
+		initialized:          make(map[string]bool, LanguageServerCount),
 	}
 	server.jsonrpcs["yaml"] = jsonrpcFromProcessIO(server.yamlLS)
 	server.jsonrpcs["json"] = jsonrpcFromProcessIO(server.jsonLS)
@@ -125,6 +127,9 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 			case "xml.format.tabSize":
 				returned = append(returned, DefaultTabSize)
 			case "yaml":
+				schemas := map[string]interface{}{
+					"https://raw.githubusercontent.com/flatpak/flatpak-builder/main/data/flatpak-manifest.schema.json": s.yamlFlatpakManifests.Slice(),
+				}
 				returned = append(returned, map[string]interface{}{
 					"schemaStore": map[string]interface{}{
 						"enable": true,
@@ -134,6 +139,7 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 						"server": "verbose",
 					},
 					"validate": true,
+					"schemas":  schemas,
 				})
 			case "[yaml]":
 				returned = append(returned, map[string]interface{}{
@@ -159,6 +165,7 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 			"result":  returned,
 		}
 		data, _ := json.Marshal(call)
+		s.logger.Infof("Returned config: %s", string(data))
 		checkerror(s.jsonrpcs[id].SendMessage(data))
 
 		return
@@ -431,15 +438,23 @@ func (s *Server) handleCall(request map[string]interface{}) {
 
 func (s *Server) selectLSForFile(name string, contents string, skipUpdate bool) string {
 	if strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
+		isFlatpak := strings.Contains(contents, "finish-args:") && strings.Contains(contents, "modules:") &&
+			(strings.Contains(contents, "app-id:") || strings.Contains(contents, "id"))
+		if isFlatpak {
+			parts := strings.Split(name, "/")
+			s.yamlFlatpakManifests.Insert(parts[len(parts)-1])
+			s.logger.Infof("Found YAML flatpak manifest %s", parts[len(parts)-1])
+		}
 		if !skipUpdate {
 			s.updateConfigs()
 		}
 		return "yaml"
 	} else if strings.HasSuffix(name, ".json") {
-		if strings.Contains(contents, "\"build-options\"") && strings.Contains(contents, "\"modules\"") && strings.Contains(contents, "\"finish-args\"") &&
-			(strings.Contains(contents, "\"app-id\"") || strings.Contains(contents, "\"id\"")) {
+		isFlatpak := strings.Contains(contents, "\"build-options\"") && strings.Contains(contents, "\"modules\"") && strings.Contains(contents, "\"finish-args\"") &&
+			(strings.Contains(contents, "\"app-id\"") || strings.Contains(contents, "\"id\""))
+		if isFlatpak {
 			parts := strings.Split(name, "/")
-			s.flatpakManifests.Insert("" + parts[len(parts)-1])
+			s.flatpakManifests.Insert(parts[len(parts)-1])
 			s.logger.Infof("Found flatpak manifest %s", parts[len(parts)-1])
 			if !skipUpdate {
 				s.updateConfigs()
@@ -523,6 +538,9 @@ func (s *Server) updateConfigs() {
 	data, _ = json.Marshal(call)
 	s.logger.Infof("workspace/didChangeConfiguration: %s", string(data))
 	checkerror(s.jsonrpcs["xml"].SendMessage(data))
+	yamlSchemas := map[string]interface{}{
+		"https://raw.githubusercontent.com/flatpak/flatpak-builder/main/data/flatpak-manifest.schema.json": s.yamlFlatpakManifests.Slice(),
+	}
 	call = map[string]interface{}{
 		"jsonrpc": "2.0",
 		"method":  "workspace/didChangeConfiguration",
@@ -537,6 +555,7 @@ func (s *Server) updateConfigs() {
 						"url":    "https://www.schemastore.org/api/json/catalog.json",
 					},
 					"validate": true,
+					"schemas":  yamlSchemas,
 				},
 			},
 		},

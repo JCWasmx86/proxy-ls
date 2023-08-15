@@ -5,7 +5,7 @@ yaml-language-server.
 ## Features
 - [x] Flatpak manifest support (JSON)
 - [ ] Flatpak manifest support (YAML)
-- [ ] Support https://www.schemastore.org/json/ for JSON
+- [ ] Support https://www.schemastore.org/json/ for JSON (Would require work in proxy-ls, better place would be in json-language-server)
 - [x] Support https://www.schemastore.org/json/ for YAML
 - [x] GSchema XML (https://gitlab.gnome.org/GNOME/glib/-/raw/HEAD/gio/gschema.dtd)
 - [ ] GResource XML

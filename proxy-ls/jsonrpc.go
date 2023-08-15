@@ -45,6 +45,14 @@ func (rpc *JSONRPC) ReadMessage() ([]byte, error) {
 			return nil, err
 		}
 
+		/*
+		* This is a state machine to parse the headers of a JSON-RPC message in the format:
+		* header: value\r\n
+		* Content-Length: 50\r\n
+		* \r\n
+		* {"jsonrpc": "2.0", ....}
+		 */
+
 		switch tmpData[0] {
 		case '\r':
 			if state == 2 {

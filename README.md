@@ -5,15 +5,15 @@ yaml-language-server. This is necessary as GNOME Builder currently does not supp
 ## Features
 - [x] Flatpak manifest support (JSON)
 - [x] Flatpak manifest support (YAML)
-- [ ] Support https://www.schemastore.org/json/ for JSON (Would require work in proxy-ls, better place would be in json-language-server)
-- [x] Support https://www.schemastore.org/json/ for YAML
-- [x] GSchema XML (https://gitlab.gnome.org/GNOME/glib/-/raw/HEAD/gio/gschema.dtd)
-- [ ] GResource XML
-- [ ] D-Bus (http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd)
-- [x] Gitlab CI
 - [x] Github Actions
-- [ ] Implement splitup GLSL support: https://github.com/svenstaro/glsl-language-server/issues/18#issuecomment-1569054980
+- [x] Gitlab CI
+- [x] GSchema XML (https://gitlab.gnome.org/GNOME/glib/-/raw/HEAD/gio/gschema.dtd)
+- [x] Support https://www.schemastore.org/json/ for YAML
 - [ ] Appstream support
+- [ ] D-Bus (http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd)
+- [ ] GResource XML
+- [ ] Implement splitup GLSL support: https://github.com/svenstaro/glsl-language-server/issues/18#issuecomment-1569054980
+- [ ] Support https://www.schemastore.org/json/ for JSON (Would require work in proxy-ls, better place would be in json-language-server)
 
 ## Installation
 ### Editor-Side

@@ -139,13 +139,13 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 				})
 			case "[yaml]":
 				returned = append(returned, map[string]interface{}{
-					"editor.tabSize":      2,
+					"editor.tabSize":      DefaultTabSize,
 					"editor.insertSpace":  true,
 					"editor.formatOnType": false,
 				})
 			case "editor":
 				returned = append(returned, map[string]interface{}{
-					"detectIndentation": 2,
+					"detectIndentation": true,
 				})
 			case "files":
 				returned = append(returned, map[string]interface{}{})

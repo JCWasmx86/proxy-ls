@@ -173,11 +173,7 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 
 	seqID := ExtractIntValue(request["id"])
 	if seqID == 1 {
-		call := map[string]interface{}{
-			"jsonrpc": "2.0",
-			"method":  "initialized",
-			"params":  map[string]interface{}{},
-		}
+		call := make_notification("initialized", map[string]interface{}{})
 		data, _ := json.Marshal(call)
 		checkerror(s.jsonrpcs[id].SendMessage(data))
 		s.mu.Lock()
@@ -205,25 +201,17 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 
 func (s *Server) publishDiagnostics() {
 	for uri, diagnostics := range s.diagnostics {
-		call := map[string]interface{}{
-			"jsonrpc": "2.0",
-			"method":  "textDocument/publishDiagnostics",
-			"params": protocol.PublishDiagnosticsParams{
-				URI:         uri,
-				Diagnostics: []protocol.Diagnostic{},
-			},
-		}
+		call := make_notification("textDocument/publishDiagnostics", protocol.PublishDiagnosticsParams{
+			URI:         uri,
+			Diagnostics: []protocol.Diagnostic{},
+		})
 		data, _ := json.Marshal(call)
 		checkerror(s.jsonrpc.SendMessage(data))
 
-		call = map[string]interface{}{
-			"jsonrpc": "2.0",
-			"method":  "textDocument/publishDiagnostics",
-			"params": protocol.PublishDiagnosticsParams{
-				URI:         uri,
-				Diagnostics: diagnostics,
-			},
-		}
+		call = make_notification("textDocument/publishDiagnostics", protocol.PublishDiagnosticsParams{
+			URI:         uri,
+			Diagnostics: diagnostics,
+		})
 		data, _ = json.Marshal(call)
 		checkerror(s.jsonrpc.SendMessage(data))
 	}
@@ -491,11 +479,7 @@ func (s *Server) updateConfigs() {
 			"fileMatch": s.flatpakManifests.Slice(),
 		},
 	}
-	call := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  "json/schemaAssociations",
-		"params":  []any{schemas},
-	}
+	call := make_notification("json/schemaAssociations", []any{schemas})
 	data, _ := json.Marshal(call)
 	s.logger.Infof("json/schemaAssociations: %s", string(data))
 	checkerror(s.jsonrpcs["json"].SendMessage(data))
@@ -507,59 +491,49 @@ func (s *Server) updateConfigs() {
 			"systemId": "https://gitlab.gnome.org/GNOME/glib/-/raw/HEAD/gio/gschema.dtd",
 		})
 	}
-	call = map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  "workspace/didChangeConfiguration",
-		"params": map[string]interface{}{
-			"settings": map[string]interface{}{
-				"xml": map[string]interface{}{
-					"fileAssociations": schemas,
-					"logs": map[string]interface{}{
-						"client": true,
-						"file":   "/tmp/lemminx.log",
+	call = make_notification("workspace/didChangeConfiguration", map[string]interface{}{
+		"settings": map[string]interface{}{
+			"xml": map[string]interface{}{
+				"fileAssociations": schemas,
+				"logs": map[string]interface{}{
+					"client": true,
+					"file":   "/tmp/lemminx.log",
+				},
+				"trace": map[string]interface{}{
+					"server": "verbose",
+				},
+				"validation": map[string]interface{}{
+					"enabled":                 true,
+					"resolveExternalEntities": true,
+					"schema": map[string]interface{}{
+						"enabled": "always",
 					},
-					"trace": map[string]interface{}{
-						"server": "verbose",
-					},
-					"validation": map[string]interface{}{
-						"enabled":                 true,
-						"resolveExternalEntities": true,
-						"schema": map[string]interface{}{
-							"enabled": "always",
-						},
-					},
-					"downloadExternalResources": map[string]interface{}{
-						"enabled": true,
-					},
+				},
+				"downloadExternalResources": map[string]interface{}{
+					"enabled": true,
 				},
 			},
 		},
-	}
+	})
 	data, _ = json.Marshal(call)
 	s.logger.Infof("workspace/didChangeConfiguration: %s", string(data))
 	checkerror(s.jsonrpcs["xml"].SendMessage(data))
 	yamlSchemas := map[string]interface{}{
 		"https://raw.githubusercontent.com/flatpak/flatpak-builder/main/data/flatpak-manifest.schema.json": s.yamlFlatpakManifests.Slice(),
 	}
-	call = map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  "workspace/didChangeConfiguration",
-		"params": map[string]interface{}{
-			"settings": map[string]interface{}{
-				"yaml": map[string]interface{}{
-					"trace": map[string]interface{}{
-						"server": "verbose",
-					},
-					"schemaStore": map[string]interface{}{
-						"enable": true,
-						"url":    "https://www.schemastore.org/api/json/catalog.json",
-					},
-					"validate": true,
-					"schemas":  yamlSchemas,
-				},
+	call = make_notification("workspace/didChangeConfiguration", map[string]interface{}{
+		"yaml": map[string]interface{}{
+			"trace": map[string]interface{}{
+				"server": "verbose",
 			},
+			"schemaStore": map[string]interface{}{
+				"enable": true,
+				"url":    "https://www.schemastore.org/api/json/catalog.json",
+			},
+			"validate": true,
+			"schemas":  yamlSchemas,
 		},
-	}
+	})
 	data, _ = json.Marshal(call)
 	s.logger.Infof("YAML: workspace/didChangeConfiguration: %s", string(data))
 	checkerror(s.jsonrpcs["yaml"].SendMessage(data))
@@ -567,7 +541,6 @@ func (s *Server) updateConfigs() {
 }
 
 func (s *Server) handleNotification(request map[string]interface{}) {
-	// Handle notifications here if needed
 	serviceMethod, ok := request["method"].(string)
 	checkok(ok)
 	s.logger.Infof("Received notification %s", serviceMethod)

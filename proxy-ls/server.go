@@ -93,11 +93,7 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 		checkok(ok)
 
 		if method == "client/registerCapability" {
-			call := map[string]interface{}{
-				"jsonrpc": "2.0",
-				"id":      request["id"],
-				"result":  nil,
-			}
+			call := make_response(request["id"], nil)
 			data, _ := json.Marshal(call)
 			checkerror(s.jsonrpcs[id].SendMessage(data))
 
@@ -159,11 +155,7 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 			}
 		}
 
-		call := map[string]interface{}{
-			"jsonrpc": "2.0",
-			"id":      request["id"],
-			"result":  returned,
-		}
+		call := make_response(request["id"], returned)
 		data, _ := json.Marshal(call)
 		s.logger.Infof("Returned config: %s", string(data))
 		checkerror(s.jsonrpcs[id].SendMessage(data))
@@ -358,17 +350,13 @@ func (s *Server) handleCall(request map[string]interface{}) {
 				Version: &version,
 			},
 		}
-		response = map[string]interface{}{
-			"jsonrpc": "2.0",
-			"id":      seq,
-			"result": map[string]interface{}{
-				"capabilities": serverCaps,
-				"serverInfo": map[string]interface{}{
-					"name":    "proxy-ls",
-					"version": "0.1",
-				},
+		response = make_response(seq, map[string]interface{}{
+			"capabilities": serverCaps,
+			"serverInfo": map[string]interface{}{
+				"name":    "proxy-ls",
+				"version": "0.1",
 			},
-		}
+		})
 	case "textDocument/documentSymbol":
 		var params protocol.DocumentSymbolParams
 

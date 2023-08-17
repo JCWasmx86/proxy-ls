@@ -44,6 +44,7 @@ func ExtractIntValue(idValue interface{}) int {
 		panic(value)
 	}
 }
+
 func str2int(id string) int {
 	switch id {
 	case "yaml":

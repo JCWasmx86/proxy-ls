@@ -93,7 +93,7 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 		checkok(ok)
 
 		if method == "client/registerCapability" {
-			call := make_response(request["id"], nil)
+			call := makeResponse(request["id"], nil)
 			data, _ := json.Marshal(call)
 			checkerror(s.jsonrpcs[id].SendMessage(data))
 
@@ -151,11 +151,12 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 				returned = append(returned, map[string]interface{}{})
 			default:
 				s.logger.Warnf("Unable to handle configuration %s from %s", section, id)
+
 				returned = append(returned, nil)
 			}
 		}
 
-		call := make_response(request["id"], returned)
+		call := makeResponse(request["id"], returned)
 		data, _ := json.Marshal(call)
 		s.logger.Infof("Returned config: %s", string(data))
 		checkerror(s.jsonrpcs[id].SendMessage(data))
@@ -165,7 +166,7 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 
 	seqID := ExtractIntValue(request["id"])
 	if seqID == 1 {
-		call := make_notification("initialized", map[string]interface{}{})
+		call := makeNotification("initialized", map[string]interface{}{})
 		data, _ := json.Marshal(call)
 		checkerror(s.jsonrpcs[id].SendMessage(data))
 		s.mu.Lock()
@@ -193,14 +194,14 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 
 func (s *Server) publishDiagnostics() {
 	for uri, diagnostics := range s.diagnostics {
-		call := make_notification("textDocument/publishDiagnostics", protocol.PublishDiagnosticsParams{
+		call := makeNotification("textDocument/publishDiagnostics", protocol.PublishDiagnosticsParams{
 			URI:         uri,
 			Diagnostics: []protocol.Diagnostic{},
 		})
 		data, _ := json.Marshal(call)
 		checkerror(s.jsonrpc.SendMessage(data))
 
-		call = make_notification("textDocument/publishDiagnostics", protocol.PublishDiagnosticsParams{
+		call = makeNotification("textDocument/publishDiagnostics", protocol.PublishDiagnosticsParams{
 			URI:         uri,
 			Diagnostics: diagnostics,
 		})
@@ -231,11 +232,12 @@ func (s *Server) InitializeAll(rootURI *string, clientCaps protocol.ClientCapabi
 	clientCaps.TextDocument.RangeFormatting = &protocol.DocumentRangeFormattingClientCapabilities{
 		DynamicRegistration: &capability,
 	}
+
 	for _, element := range s.jsonrpcs {
 		traceValue := protocol.TraceValueVerbose
 		version := "0.0.1"
 		pid := int32(syscall.Getpid())
-		call := make_request(1, "initialize", protocol.InitializeParams{
+		call := makeRequest(1, "initialize", protocol.InitializeParams{
 			ProcessID: &pid,
 			RootURI:   rootURI,
 			Trace:     &traceValue,
@@ -345,7 +347,7 @@ func (s *Server) handleCall(request map[string]interface{}) {
 				Version: &version,
 			},
 		}
-		response = make_response(seq, map[string]interface{}{
+		response = makeResponse(seq, map[string]interface{}{
 			"capabilities": serverCaps,
 			"serverInfo": map[string]interface{}{
 				"name":    "proxy-ls",
@@ -382,6 +384,7 @@ func (s *Server) handleCall(request map[string]interface{}) {
 		s.redirectRequest(n, request)
 	case "textDocument/hover":
 		var params protocol.HoverParams
+
 		checkerror(json.Unmarshal(marshalledParams, &params))
 
 		n := s.selectLSForFile(params.TextDocument.URI, "", true)
@@ -416,9 +419,11 @@ func (s *Server) selectLSForFile(name string, contents string, skipUpdate bool) 
 			s.yamlFlatpakManifests.Insert(parts[len(parts)-1])
 			s.logger.Infof("Found YAML flatpak manifest %s", parts[len(parts)-1])
 		}
+
 		if !skipUpdate {
 			s.updateConfigs()
 		}
+
 		return "yaml"
 	} else if strings.HasSuffix(name, ".json") {
 		isFlatpak := strings.Contains(contents, "\"build-options\"") && strings.Contains(contents, "\"modules\"") && strings.Contains(contents, "\"finish-args\"") &&
@@ -427,6 +432,7 @@ func (s *Server) selectLSForFile(name string, contents string, skipUpdate bool) 
 			parts := strings.Split(name, "/")
 			s.flatpakManifests.Insert(parts[len(parts)-1])
 			s.logger.Infof("Found flatpak manifest %s", parts[len(parts)-1])
+
 			if !skipUpdate {
 				s.updateConfigs()
 			}
@@ -436,12 +442,14 @@ func (s *Server) selectLSForFile(name string, contents string, skipUpdate bool) 
 	} else if strings.HasSuffix(name, ".xml") || strings.HasSuffix(name, ".doap") {
 		if strings.HasSuffix(name, ".gschema.xml") {
 			parts := strings.Split(name, "/")
-			s.gschemaFiles.Insert(strings.Replace(name, "file://", "", -1))
+			s.gschemaFiles.Insert(strings.ReplaceAll(name, "file://", ""))
 			s.logger.Infof("Found .gschema.xml file %s", parts[len(parts)-1])
+
 			if !skipUpdate {
 				s.updateConfigs()
 			}
 		}
+
 		return "xml"
 	}
 
@@ -462,7 +470,7 @@ func (s *Server) updateConfigs() {
 			"fileMatch": s.flatpakManifests.Slice(),
 		},
 	}
-	call := make_notification("json/schemaAssociations", []any{schemas})
+	call := makeNotification("json/schemaAssociations", []any{schemas})
 	data, _ := json.Marshal(call)
 	s.logger.Infof("json/schemaAssociations: %s", string(data))
 	checkerror(s.jsonrpcs["json"].SendMessage(data))
@@ -474,7 +482,8 @@ func (s *Server) updateConfigs() {
 			"systemId": "https://gitlab.gnome.org/GNOME/glib/-/raw/HEAD/gio/gschema.dtd",
 		})
 	}
-	call = make_notification("workspace/didChangeConfiguration", map[string]interface{}{
+
+	call = makeNotification("workspace/didChangeConfiguration", map[string]interface{}{
 		"settings": map[string]interface{}{
 			"xml": map[string]interface{}{
 				"fileAssociations": schemas,
@@ -504,7 +513,7 @@ func (s *Server) updateConfigs() {
 	yamlSchemas := map[string]interface{}{
 		"https://raw.githubusercontent.com/flatpak/flatpak-builder/main/data/flatpak-manifest.schema.json": s.yamlFlatpakManifests.Slice(),
 	}
-	call = make_notification("workspace/didChangeConfiguration", map[string]interface{}{
+	call = makeNotification("workspace/didChangeConfiguration", map[string]interface{}{
 		"yaml": map[string]interface{}{
 			"trace": map[string]interface{}{
 				"server": "verbose",
@@ -533,6 +542,7 @@ func (s *Server) handleNotification(request map[string]interface{}) {
 	switch serviceMethod {
 	case "textDocument/didOpen":
 		var params protocol.DidOpenTextDocumentParams
+
 		checkerror(json.Unmarshal(marshalledParams, &params))
 
 		n := s.selectLSForFile(params.TextDocument.URI, params.TextDocument.Text, false)
@@ -541,18 +551,21 @@ func (s *Server) handleNotification(request map[string]interface{}) {
 		s.updateConfigs()
 	case "textDocument/didChange":
 		var params protocol.DidChangeTextDocumentParams
+
 		checkerror(json.Unmarshal(marshalledParams, &params))
 
 		n := s.selectLSForFile(params.TextDocument.URI, "", true)
 		s.redirectNotification(n, request)
 	case "textDocument/didSave":
 		var params protocol.DidSaveTextDocumentParams
+
 		checkerror(json.Unmarshal(marshalledParams, &params))
 
 		n := s.selectLSForFile(params.TextDocument.URI, "", true)
 		s.redirectNotification(n, request)
 	case "textDocument/didClose":
 		var params protocol.DidCloseTextDocumentParams
+
 		checkerror(json.Unmarshal(marshalledParams, &params))
 
 		n := s.selectLSForFile(params.TextDocument.URI, "", true)

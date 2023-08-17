@@ -1,6 +1,6 @@
 package main
 
-func make_notification(method string, params any) map[string]interface{} {
+func makeNotification(method string, params any) map[string]interface{} {
 	return map[string]interface{}{
 		"jsonrpc": "2.0",
 		"method":  method,
@@ -8,7 +8,7 @@ func make_notification(method string, params any) map[string]interface{} {
 	}
 }
 
-func make_response(seq any, params any) map[string]interface{} {
+func makeResponse(seq any, params any) map[string]interface{} {
 	return map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      seq,
@@ -16,7 +16,7 @@ func make_response(seq any, params any) map[string]interface{} {
 	}
 }
 
-func make_request(seq any, method string, params any) map[string]interface{} {
+func makeRequest(seq any, method string, params any) map[string]interface{} {
 	return map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      seq,

@@ -28,6 +28,7 @@ func NewJSONRPC() *JSONRPC {
 
 func (rpc *JSONRPC) ReadMessage() ([]byte, error) {
 	var contentLength int
+
 	var state int
 
 	// Read headers

@@ -21,20 +21,20 @@ yaml-language-server.
 > Requires GNOME Builder Nightly!
 
 - Install the proxyls plugin from here: https://github.com/JCWasmx86/GNOME-Builder-Plugins
-### Language Server
-#### Dependencies
+### Dependencies
 > [!IMPORTANT]
 > *All* of these dependencies are needed. If one language server is missing, proxy-ls may fail in weird way!
-##### YAML Language Server
+#### YAML Language Server
 ```
 sudo npm install -g yaml-language-server
 ```
-##### Lemminx (XML Language Server)
+#### Lemminx (XML Language Server)
 Follow these steps: https://github.com/eclipse/lemminx#generating-a-native-binary
 
 The binary you copy to `/usr/local/bin` should be called `lemminx`. It is recommended to use a native binary
-as opposed to e.g. using a JAR file and wrapping it using a shellscript.
-##### JSON Language Server
+as opposed to e.g. using a JAR file and wrapping it using a shellscript as it improves the startup time at the
+cost of a little bit of performance.
+#### JSON Language Server
 ```
 git clone https://github.com/microsoft/vscode --depth=1
 cd vscode/extensions/json-language-features/server
@@ -42,5 +42,13 @@ npm i
 tsc -p ./
 npm pack
 sudo npm i -g vscode-json-languageserver-*.tgz
+```
+### Language Server
+(Requires go to be installed)
+```
+git clone https://github.com/JCWasmx86/proxy-ls
+cd proxy-ls
+make
+sudo make install
 ```
 

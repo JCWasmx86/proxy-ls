@@ -15,3 +15,12 @@ func make_response(seq any, params any) map[string]interface{} {
 		"result":  params,
 	}
 }
+
+func make_request(seq any, method string, params any) map[string]interface{} {
+	return map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      seq,
+		"method":  method,
+		"params":  params,
+	}
+}

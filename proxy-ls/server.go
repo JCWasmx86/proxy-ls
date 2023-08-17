@@ -235,56 +235,51 @@ func (s *Server) InitializeAll(rootURI *string, clientCaps protocol.ClientCapabi
 		traceValue := protocol.TraceValueVerbose
 		version := "0.0.1"
 		pid := int32(syscall.Getpid())
-		call := map[string]interface{}{
-			"jsonrpc": "2.0",
-			"id":      1,
-			"method":  "initialize",
-			"params": protocol.InitializeParams{
-				ProcessID: &pid,
-				RootURI:   rootURI,
-				Trace:     &traceValue,
-				ClientInfo: &struct {
-					Name    string  `json:"name"`
-					Version *string `json:"version,omitempty"`
-				}{Name: "proxy-ls", Version: &version},
-				Capabilities: clientCaps,
-				InitializationOptions: map[string]interface{}{
-					"handledSchemaProtocols": []string{"file", "http", "https"},
-					"provideFormatter":       true,
-					"settings": map[string]interface{}{
-						"xml": map[string]interface{}{
-							"logs": map[string]interface{}{
-								"client": true,
-								"file":   "/tmp/lemminx.log",
-							},
-							"trace": map[string]interface{}{
-								"server": "verbose",
-							},
-							"validation": map[string]interface{}{
-								"enabled":                 true,
-								"resolveExternalEntities": true,
-								"schema": map[string]interface{}{
-									"enabled": "always",
-								},
-							},
-							"downloadExternalResources": map[string]interface{}{
-								"enabled": true,
+		call := make_request(1, "initialize", protocol.InitializeParams{
+			ProcessID: &pid,
+			RootURI:   rootURI,
+			Trace:     &traceValue,
+			ClientInfo: &struct {
+				Name    string  `json:"name"`
+				Version *string `json:"version,omitempty"`
+			}{Name: "proxy-ls", Version: &version},
+			Capabilities: clientCaps,
+			InitializationOptions: map[string]interface{}{
+				"handledSchemaProtocols": []string{"file", "http", "https"},
+				"provideFormatter":       true,
+				"settings": map[string]interface{}{
+					"xml": map[string]interface{}{
+						"logs": map[string]interface{}{
+							"client": true,
+							"file":   "/tmp/lemminx.log",
+						},
+						"trace": map[string]interface{}{
+							"server": "verbose",
+						},
+						"validation": map[string]interface{}{
+							"enabled":                 true,
+							"resolveExternalEntities": true,
+							"schema": map[string]interface{}{
+								"enabled": "always",
 							},
 						},
-						"yaml": map[string]interface{}{
-							"schemaStore": map[string]interface{}{
-								"enable": true,
-								"url":    "https://www.schemastore.org/api/json/catalog.json",
-							},
-							"trace": map[string]interface{}{
-								"server": "verbose",
-							},
-							"validate": true,
+						"downloadExternalResources": map[string]interface{}{
+							"enabled": true,
 						},
+					},
+					"yaml": map[string]interface{}{
+						"schemaStore": map[string]interface{}{
+							"enable": true,
+							"url":    "https://www.schemastore.org/api/json/catalog.json",
+						},
+						"trace": map[string]interface{}{
+							"server": "verbose",
+						},
+						"validate": true,
 					},
 				},
 			},
-		}
+		})
 		data, _ := json.Marshal(call)
 		checkerror(element.SendMessage(data))
 	}

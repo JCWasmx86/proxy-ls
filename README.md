@@ -1,6 +1,6 @@
 # proxy-ls
 This is a language server that acts as a proxy between GNOME Builder and other language servers like vscode-json-languageserver, lemminx or
-yaml-language-server.
+yaml-language-server. This is necessary as GNOME Builder currently does not support configuring language servers.
 
 ## Features
 - [x] Flatpak manifest support (JSON)
@@ -61,6 +61,7 @@ sudo make install
 - macOS/Windows support
 - Support for any other editor
 - Support for weird Linux distributions like nixOS or Alpine.
+- A lot of configuration knobs
 
 ## License
 GNU GPL v3.0

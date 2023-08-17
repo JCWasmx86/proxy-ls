@@ -41,8 +41,10 @@ cd vscode/extensions/json-language-features/server
 npm i
 tsc -p ./
 npm pack
-sudo npm i -g vscode-json-languageserver-*.tgz
+sudo npm install -g vscode-json-languageserver-*.tgz
 ```
+This is required as a plain `npm install -g` would symlink from /usr/local/... to your
+vscode directory.
 ### Language Server
 (Requires go to be installed)
 ```
@@ -51,4 +53,15 @@ cd proxy-ls
 make
 sudo make install
 ```
+## Objectives
+### Goals
+- Enable better XML/JSON/YAML integration in GNOME Builder
+- Minimal amount of code. Work should be done on the language server side
+### Non-Goals
+- macOS/Windows support
+- Support for any other editor
+- Support for weird Linux distributions like nixOS or Alpine.
+
+## License
+GNU GPL v3.0
 

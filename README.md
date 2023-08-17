@@ -15,3 +15,32 @@ yaml-language-server.
 - [ ] Implement splitup GLSL support: https://github.com/svenstaro/glsl-language-server/issues/18#issuecomment-1569054980
 - [ ] Appstream support
 
+## Installation
+### Editor-Side
+> [!IMPORTANT]
+> Requires GNOME Builder Nightly!
+
+- Install the proxyls plugin from here: https://github.com/JCWasmx86/GNOME-Builder-Plugins
+### Language Server
+#### Dependencies
+> [!IMPORTANT]
+> *All* of these dependencies are needed. If one language server is missing, proxy-ls may fail in weird way!
+##### YAML Language Server
+```
+sudo npm install -g yaml-language-server
+```
+##### Lemminx (XML Language Server)
+Follow these steps: https://github.com/eclipse/lemminx#generating-a-native-binary
+
+The binary you copy to `/usr/local/bin` should be called `lemminx`. It is recommended to use a native binary
+as opposed to e.g. using a JAR file and wrapping it using a shellscript.
+##### JSON Language Server
+```
+git clone https://github.com/microsoft/vscode --depth=1
+cd vscode/extensions/json-language-features/server
+npm i
+tsc -p ./
+npm pack
+sudo npm i -g vscode-json-languageserver-*.tgz
+```
+

@@ -389,6 +389,20 @@ func (s *Server) handleCall(request map[string]interface{}) {
 
 		n := s.selectLSForFile(params.TextDocument.URI, "", true)
 		s.redirectRequest(n, request)
+	case "textDocument/declaration":
+		var params protocol.DeclarationParams
+
+		checkerror(json.Unmarshal(marshalledParams, &params))
+
+		n := s.selectLSForFile(params.TextDocument.URI, "", true)
+		s.redirectRequest(n, request)
+	case "textDocument/definition":
+		var params protocol.DefinitionParams
+
+		checkerror(json.Unmarshal(marshalledParams, &params))
+
+		n := s.selectLSForFile(params.TextDocument.URI, "", true)
+		s.redirectRequest(n, request)
 	default:
 		response = map[string]interface{}{
 			"jsonrpc": "2.0",

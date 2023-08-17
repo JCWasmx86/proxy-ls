@@ -126,17 +126,7 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 				schemas := map[string]interface{}{
 					"https://raw.githubusercontent.com/flatpak/flatpak-builder/main/data/flatpak-manifest.schema.json": s.yamlFlatpakManifests.Slice(),
 				}
-				returned = append(returned, map[string]interface{}{
-					"schemaStore": map[string]interface{}{
-						"enable": true,
-						"url":    "https://www.schemastore.org/api/json/catalog.json",
-					},
-					"trace": map[string]interface{}{
-						"server": "verbose",
-					},
-					"validate": true,
-					"schemas":  schemas,
-				})
+				returned = append(returned, yamlConfig(schemas))
 			case "[yaml]":
 				returned = append(returned, map[string]interface{}{
 					"editor.tabSize":      DefaultTabSize,
@@ -250,35 +240,8 @@ func (s *Server) InitializeAll(rootURI *string, clientCaps protocol.ClientCapabi
 				"handledSchemaProtocols": []string{"file", "http", "https"},
 				"provideFormatter":       true,
 				"settings": map[string]interface{}{
-					"xml": map[string]interface{}{
-						"logs": map[string]interface{}{
-							"client": true,
-							"file":   "/tmp/lemminx.log",
-						},
-						"trace": map[string]interface{}{
-							"server": "verbose",
-						},
-						"validation": map[string]interface{}{
-							"enabled":                 true,
-							"resolveExternalEntities": true,
-							"schema": map[string]interface{}{
-								"enabled": "always",
-							},
-						},
-						"downloadExternalResources": map[string]interface{}{
-							"enabled": true,
-						},
-					},
-					"yaml": map[string]interface{}{
-						"schemaStore": map[string]interface{}{
-							"enable": true,
-							"url":    "https://www.schemastore.org/api/json/catalog.json",
-						},
-						"trace": map[string]interface{}{
-							"server": "verbose",
-						},
-						"validate": true,
-					},
+					"xml":  xmlConfig(make([](map[string]interface{}), 0)),
+					"yaml": yamlConfig(map[string]interface{}{}),
 				},
 			},
 		})
@@ -498,26 +461,7 @@ func (s *Server) updateConfigs() {
 
 	call = makeNotification("workspace/didChangeConfiguration", map[string]interface{}{
 		"settings": map[string]interface{}{
-			"xml": map[string]interface{}{
-				"fileAssociations": schemas,
-				"logs": map[string]interface{}{
-					"client": true,
-					"file":   "/tmp/lemminx.log",
-				},
-				"trace": map[string]interface{}{
-					"server": "verbose",
-				},
-				"validation": map[string]interface{}{
-					"enabled":                 true,
-					"resolveExternalEntities": true,
-					"schema": map[string]interface{}{
-						"enabled": "always",
-					},
-				},
-				"downloadExternalResources": map[string]interface{}{
-					"enabled": true,
-				},
-			},
+			"xml": xmlConfig(schemas),
 		},
 	})
 	data, _ = json.Marshal(call)
@@ -527,17 +471,7 @@ func (s *Server) updateConfigs() {
 		"https://raw.githubusercontent.com/flatpak/flatpak-builder/main/data/flatpak-manifest.schema.json": s.yamlFlatpakManifests.Slice(),
 	}
 	call = makeNotification("workspace/didChangeConfiguration", map[string]interface{}{
-		"yaml": map[string]interface{}{
-			"trace": map[string]interface{}{
-				"server": "verbose",
-			},
-			"schemaStore": map[string]interface{}{
-				"enable": true,
-				"url":    "https://www.schemastore.org/api/json/catalog.json",
-			},
-			"validate": true,
-			"schemas":  yamlSchemas,
-		},
+		"yaml": yamlConfig(yamlSchemas),
 	})
 	data, _ = json.Marshal(call)
 	s.logger.Infof("YAML: workspace/didChangeConfiguration: %s", string(data))

@@ -1,8 +1,10 @@
 PREFIX ?= /usr/local
-MMAKE = PREFIX=$(PREFIX) $(MAKE)
-all:
-	cd proxy-ls && $(MMAKE)
-install: all
-	cd proxy-ls && $(MMAKE) install
+proxy-ls: $(wildcard *.go)
+	go build -v
+install:
+	install -D -m755 proxy-ls $(PREFIX)/bin/proxy-ls
 format:
-	cd proxy-ls && $(MMAKE) format
+	wsl --fix .
+	go fmt
+	gofumpt -l -w .
+

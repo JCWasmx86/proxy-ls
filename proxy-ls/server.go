@@ -325,7 +325,6 @@ func (s *Server) handleCall(request map[string]interface{}) {
 		var params protocol.InitializeParams
 
 		checkerror(json.Unmarshal(marshalledParams, &params))
-		s.logger.Infof("Client caps: %v", params.Capabilities)
 		s.InitializeAll(params.RootURI, params.Capabilities)
 
 		syncType := protocol.TextDocumentSyncKindFull

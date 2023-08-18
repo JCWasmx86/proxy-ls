@@ -208,7 +208,7 @@ func (s *Server) handleLSNotification(request map[string]interface{}, _ *JSONRPC
 
 	marshalledParams, _ := json.Marshal(request["params"])
 
-	if method == "textDocument/publishDiagnostics" && id != "ruff" {
+	if method == "textDocument/publishDiagnostics" {
 		var diags protocol.PublishDiagnosticsParams
 
 		checkerror(json.Unmarshal(marshalledParams, &diags))

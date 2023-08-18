@@ -45,6 +45,11 @@ sudo npm install -g vscode-json-languageserver-*.tgz
 ```
 This is required as a plain `npm install -g` would symlink from /usr/local/... to your
 vscode directory.
+#### ruff-lsp
+```
+sudo pip install ruff-lsp
+sudo pip install ruff
+```
 ### Language Server
 (Requires go to be installed)
 ```

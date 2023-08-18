@@ -9,4 +9,5 @@ const (
 	YamlID               = 1
 	JSONID               = 2
 	XMLID                = 3
+	RUFFID               = 4
 )

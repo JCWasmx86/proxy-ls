@@ -47,10 +47,12 @@ func NewServer(jsonrpc *JSONRPC) *Server {
 	server.jsonrpcs["yaml"] = jsonrpcFromProcessIO(server.yamlLS)
 	server.jsonrpcs["json"] = jsonrpcFromProcessIO(server.jsonLS)
 	server.jsonrpcs["xml"] = jsonrpcFromProcessIO(server.xmlLS)
+	server.jsonrpcs["ruff"] = jsonrpcFromProcessIO(CreateProcessFromCommand("ruff-lsp"))
 
 	go server.runLS(server.jsonrpcs["yaml"], "yaml")
 	go server.runLS(server.jsonrpcs["json"], "json")
 	go server.runLS(server.jsonrpcs["xml"], "xml")
+	go server.runLS(server.jsonrpcs["ruff"], "ruff")
 
 	return server
 }
@@ -201,18 +203,22 @@ func (s *Server) publishDiagnostics() {
 }
 
 func (s *Server) handleLSNotification(request map[string]interface{}, _ *JSONRPC, id string) {
-	s.logger.Infof("LS-Notification: (%s) %v", id, request["method"])
 	method, ok := request["method"].(string)
 	checkok(ok)
 
 	marshalledParams, _ := json.Marshal(request["params"])
 
-	if method == "textDocument/publishDiagnostics" {
+	if method == "textDocument/publishDiagnostics" && id != "ruff" {
 		var diags protocol.PublishDiagnosticsParams
 
 		checkerror(json.Unmarshal(marshalledParams, &diags))
 		s.diagnostics[diags.URI] = diags.Diagnostics
 		s.publishDiagnostics()
+	}
+
+	if method == "window/logMessage" {
+		params := request["params"].(map[string]interface{})
+		s.logger.Infof("%s: %s", id, params["message"])
 	}
 }
 
@@ -242,6 +248,30 @@ func (s *Server) InitializeAll(rootURI *string, clientCaps protocol.ClientCapabi
 				"settings": map[string]interface{}{
 					"xml":  xmlConfig(make([](map[string]interface{}), 0)),
 					"yaml": yamlConfig(map[string]interface{}{}),
+					"pyright": map[string]interface{}{
+						"disableOrganizeImports": true, // ruff-lsp does that
+					},
+					"python": map[string]interface{}{
+						"analysis": map[string]interface{}{
+							"autoImportCompletions": true,
+							"logLevel":              "Trace",
+							"typeCheckingMode":      "strict",
+						},
+					},
+				},
+				"globalSettings": map[string]interface{}{
+					"logLevel":        "debug",
+					"run":             "onType",
+					"organizeImports": true,
+					"fixAll":          true,
+					"codeAction": map[string]interface{}{
+						"fixViolation": map[string]interface{}{
+							"enable": true,
+						},
+						"disableRuleComment": map[string]interface{}{
+							"enable": true,
+						},
+					},
 				},
 			},
 		})
@@ -427,6 +457,8 @@ func (s *Server) selectLSForFile(name string, contents string, skipUpdate bool) 
 		}
 
 		return "xml"
+	} else if strings.HasSuffix(name, ".py") {
+		return "ruff"
 	}
 
 	panic(name)

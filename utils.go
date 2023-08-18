@@ -53,6 +53,8 @@ func str2int(id string) int {
 		return JSONID
 	case "xml":
 		return XMLID
+	case "ruff":
+		return RUFFID
 	}
 
 	panic(id)

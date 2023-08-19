@@ -83,11 +83,41 @@ func (rpc *JSONRPC) ReadMessage() ([]byte, error) {
 	}
 
 	// Read JSON-RPC message
-	messageData := make([]byte, contentLength)
+	messageData := make([]byte, 0)
 
-	_, err := rpc.in.Read(messageData)
-	if err != nil {
-		return nil, fmt.Errorf("ReadMessage(): error reading message data: %w", err)
+	left := contentLength
+
+	for {
+		if left == 0 {
+			break
+		}
+
+		amount := 1000
+		if amount > left {
+			amount = left
+		}
+
+		tmp := make([]byte, amount)
+
+		n, err := rpc.in.Read(tmp)
+		if err != nil {
+			return nil, fmt.Errorf("ReadMessage(): error reading message data: %w", err)
+		}
+
+		messageData = append(messageData, tmp[:n]...)
+		left -= n
+	}
+
+	for {
+		if messageData[len(messageData)-1] != 0 {
+			break
+		}
+
+		messageData = messageData[:len(messageData)-1]
+	}
+
+	if len(messageData) != contentLength {
+		return nil, fmt.Errorf("ReadMessage(): error reading %d bytes. (Read %d)", contentLength, len(messageData))
 	}
 
 	return messageData, nil

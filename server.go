@@ -61,14 +61,14 @@ func (s *Server) runLS(jsonrpc *JSONRPC, id string) {
 	for {
 		messageData, err := jsonrpc.ReadMessage()
 		if err != nil {
-			s.logger.Infof("(%v) Error reading message: %s\n", id, err)
+			s.logger.Errorf("(%v) Error reading message: %s\n", id, err)
 
 			return
 		}
 
 		var request map[string]interface{}
 		if err := json.Unmarshal(messageData, &request); err != nil {
-			s.logger.Infof("(%v) Error decoding request: %s\n", id, err)
+			s.logger.Errorf("(%v) Error decoding request: %s\n", id, err)
 
 			return
 		}
@@ -563,7 +563,7 @@ func (s *Server) Serve() {
 
 		var request map[string]interface{}
 		if err := json.Unmarshal(messageData, &request); err != nil {
-			s.logger.Infof("Error decoding request: %s\n", err)
+			s.logger.Errorf("Error decoding request: %s\n", err)
 
 			return
 		}

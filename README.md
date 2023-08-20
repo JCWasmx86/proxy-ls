@@ -51,7 +51,9 @@ sudo pip install ruff-lsp
 sudo pip install ruff
 ```
 #### rome
-Install from here: https://rome.tools/ A binary called `rome` has to be on PATH afterwards.
+```
+cargo install --git https://github.com/rome/tools tools
+```
 ### Language Server
 (Requires go to be installed)
 ```

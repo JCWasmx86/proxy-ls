@@ -55,6 +55,8 @@ func str2int(id string) int {
 		return XMLID
 	case "ruff":
 		return RUFFID
+	case "rome":
+		return ROMEID
 	}
 
 	panic(id)

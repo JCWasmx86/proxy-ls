@@ -10,4 +10,5 @@ const (
 	JSONID               = 2
 	XMLID                = 3
 	RUFFID               = 4
+	ROMEID               = 5
 )

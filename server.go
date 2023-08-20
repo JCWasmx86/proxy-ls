@@ -48,11 +48,13 @@ func NewServer(jsonrpc *JSONRPC) *Server {
 	server.jsonrpcs["json"] = jsonrpcFromProcessIO(server.jsonLS)
 	server.jsonrpcs["xml"] = jsonrpcFromProcessIO(server.xmlLS)
 	server.jsonrpcs["ruff"] = jsonrpcFromProcessIO(CreateProcessFromCommand("ruff-lsp"))
+	server.jsonrpcs["rome"] = jsonrpcFromProcessIO(CreateProcessFromCommand("rome lsp_proxy"))
 
 	go server.runLS(server.jsonrpcs["yaml"], "yaml")
 	go server.runLS(server.jsonrpcs["json"], "json")
 	go server.runLS(server.jsonrpcs["xml"], "xml")
 	go server.runLS(server.jsonrpcs["ruff"], "ruff")
+	go server.runLS(server.jsonrpcs["rome"], "rome")
 
 	return server
 }
@@ -141,6 +143,12 @@ func (s *Server) handleLSResponse(request map[string]interface{}, rpc *JSONRPC, 
 				})
 			case "files":
 				returned = append(returned, map[string]interface{}{})
+			case "rome":
+				returned = append(returned, map[string]interface{}{
+					"unstable":              true,
+					"rename":                true,
+					"require_configuration": true,
+				})
 			default:
 				s.logger.Warnf("Unable to handle configuration %s from %s", section, id)
 
@@ -395,6 +403,13 @@ func (s *Server) handleCall(request map[string]interface{}) {
 
 		n := s.selectLSForFile(params.TextDocument.URI, "", true)
 		s.redirectRequest(n, request)
+	case "textDocument/rename":
+		var params protocol.RenameParams
+
+		checkerror(json.Unmarshal(marshalledParams, &params))
+
+		n := s.selectLSForFile(params.TextDocument.URI, "", true)
+		s.redirectRequest(n, request)
 	default:
 		response = map[string]interface{}{
 			"jsonrpc": "2.0",
@@ -459,6 +474,8 @@ func (s *Server) selectLSForFile(name string, contents string, skipUpdate bool) 
 		return "xml"
 	} else if strings.HasSuffix(name, ".py") {
 		return "ruff"
+	} else if strings.HasSuffix(name, ".js") {
+		return "rome"
 	}
 
 	panic(name)

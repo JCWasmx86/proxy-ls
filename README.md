@@ -52,7 +52,7 @@ sudo pip install ruff
 ```
 #### rome
 ```
-cargo install --git https://github.com/rome/tools tools
+cargo install --git https://github.com/rome/tools rome_cli
 ```
 ### Language Server
 (Requires go to be installed)

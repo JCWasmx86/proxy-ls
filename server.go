@@ -48,7 +48,7 @@ func NewServer(jsonrpc *JSONRPC) *Server {
 	server.jsonrpcs["json"] = jsonrpcFromProcessIO(server.jsonLS)
 	server.jsonrpcs["xml"] = jsonrpcFromProcessIO(server.xmlLS)
 	server.jsonrpcs["ruff"] = jsonrpcFromProcessIO(CreateProcessFromCommand("ruff-lsp"))
-	server.jsonrpcs["rome"] = jsonrpcFromProcessIO(CreateProcessFromCommand("rome lsp_proxy"))
+	server.jsonrpcs["rome"] = jsonrpcFromProcessIO(CreateProcessFromCommand("rome lsp-proxy"))
 
 	go server.runLS(server.jsonrpcs["yaml"], "yaml")
 	go server.runLS(server.jsonrpcs["json"], "json")

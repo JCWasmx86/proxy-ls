@@ -26,6 +26,7 @@ type Server struct {
 	flatpakManifests     *set.Set[string]
 	yamlFlatpakManifests *set.Set[string]
 	gschemaFiles         *set.Set[string]
+	gresourceFiles       *set.Set[string]
 }
 
 func NewServer(jsonrpc *JSONRPC) *Server {
@@ -37,6 +38,7 @@ func NewServer(jsonrpc *JSONRPC) *Server {
 		flatpakManifests:     set.New[string](AverageFileCount),
 		yamlFlatpakManifests: set.New[string](AverageFileCount),
 		gschemaFiles:         set.New[string](AverageFileCount),
+		gresourceFiles:       set.New[string](AverageFileCount),
 		jsonLS:               CreateProcessFromCommand("vscode-json-languageserver --stdio"),
 		xmlLS:                CreateProcessFromCommand("lemminx"),
 		yamlLS:               CreateProcessFromCommand("yaml-language-server --stdio"),
@@ -469,6 +471,14 @@ func (s *Server) selectLSForFile(name string, contents string, skipUpdate bool) 
 			if !skipUpdate {
 				s.updateConfigs()
 			}
+		} else if strings.HasSuffix(name, ".gresource.xml") {
+			parts := strings.Split(name, "/")
+			s.gresourceFiles.Insert(strings.ReplaceAll(name, "file://", ""))
+			s.logger.Infof("Found .gresource.xml file %s", parts[len(parts)-1])
+
+			if !skipUpdate {
+				s.updateConfigs()
+			}
 		}
 
 		return "xml"
@@ -505,6 +515,12 @@ func (s *Server) updateConfigs() {
 		schemas = append(schemas, map[string]interface{}{
 			"pattern":  gschema,
 			"systemId": "https://gitlab.gnome.org/GNOME/glib/-/raw/HEAD/gio/gschema.dtd",
+		})
+	}
+	for _, gresource := range s.gresourceFiles.Slice() {
+		schemas = append(schemas, map[string]interface{}{
+			"pattern":  gresource,
+			"systemId": "https://gitlab.gnome.org/GNOME/glib/-/raw/HEAD/gio/gresource.dtd",
 		})
 	}
 

@@ -11,7 +11,7 @@ yaml-language-server. This is necessary as GNOME Builder currently does not supp
 - [x] Support https://www.schemastore.org/json/ for YAML
 - [ ] Appstream support
 - [ ] D-Bus (http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd)
-- [ ] GResource XML
+- [x] GResource XML
 - [ ] Implement splitup GLSL support: https://github.com/svenstaro/glsl-language-server/issues/18#issuecomment-1569054980
 - [ ] Support https://www.schemastore.org/json/ for JSON (Would require work in proxy-ls, better place would be in json-language-server)
 

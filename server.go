@@ -330,7 +330,7 @@ func (s *Server) handleCall(request map[string]interface{}) {
 		checkerror(json.Unmarshal(marshalledParams, &params))
 		s.InitializeAll(params.RootURI, params.Capabilities)
 
-		syncType := protocol.TextDocumentSyncKindFull
+		syncType := protocol.TextDocumentSyncKindIncremental
 		version := "0.0.1"
 		serverCaps := protocol.InitializeResult{
 			Capabilities: protocol.ServerCapabilities{

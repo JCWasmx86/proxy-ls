@@ -291,7 +291,7 @@ func (s *Server) InitializeAll(rootURI *string, clientCaps protocol.ClientCapabi
 
 	for {
 		s.mu.Lock()
-		if s.initialized["yaml"] && s.initialized["json"] && s.initialized["xml"] {
+		if s.initialized["yaml"] && s.initialized["json"] && s.initialized["xml"] && s.initialized["ruff"] && s.initialized["rome"] {
 			s.mu.Unlock()
 
 			return
@@ -517,6 +517,7 @@ func (s *Server) updateConfigs() {
 			"systemId": "https://gitlab.gnome.org/GNOME/glib/-/raw/HEAD/gio/gschema.dtd",
 		})
 	}
+
 	for _, gresource := range s.gresourceFiles.Slice() {
 		schemas = append(schemas, map[string]interface{}{
 			"pattern":  gresource,

@@ -482,7 +482,7 @@ func (s *Server) selectLSForFile(name string, contents string, skipUpdate bool) 
 		}
 
 		return "xml"
-	} else if strings.HasSuffix(name, ".py") {
+	} else if strings.HasSuffix(name, ".py") || strings.HasSuffix(name, ".pyi") {
 		return "ruff"
 	} else if strings.HasSuffix(name, ".js") {
 		return "rome"

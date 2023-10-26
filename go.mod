@@ -3,7 +3,7 @@ module proxy-ls/proxy-ls
 go 1.20
 
 require (
-	github.com/hashicorp/go-set v0.1.14
+	github.com/hashicorp/go-set v0.1.13
 	github.com/tliron/glsp v0.2.0
 	github.com/withmandala/go-log v0.1.0
 )

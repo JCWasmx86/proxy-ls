@@ -49,7 +49,7 @@ This is required as a plain `npm install -g` would symlink from /usr/local/... t
 vscode directory.
 #### ruff-lsp
 ```
-sudo pip install ruff-lsp
+sudo pip install ruff-lsp # Or you can install my fork from here: https://github.com/JCWasmx86/ruff-lsp for a better experience
 sudo pip install ruff
 ```
 #### rome
